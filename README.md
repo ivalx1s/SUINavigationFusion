@@ -1,4 +1,4 @@
-# SUINavigationCore
+# SUINavigationFusion
 
 A SwiftUI-first navigation core with a customizable top bar and a thin UIKit bridge.
 It hides UINavigationBar, drives your own top bar via environment, and exposes a tiny Navigator API for push/pop.
@@ -9,13 +9,13 @@ Requirements
 
 ## Installation
 
-Add SUINavigationCore to your target via Xcode → Package Dependencies (or whatever your setup is) and link the product SUINavigationCore.
+Add SUINavigationFusion to your target via Xcode → Package Dependencies and link the product SUINavigationFusion.
 
 ## Quick start
 
 ```swift
 import SwiftUI
-import SUINavigationCore
+import SUINavigationFusion
 
 @main
 struct DemoApp: App {
@@ -24,7 +24,7 @@ struct DemoApp: App {
             NavigationShell(configuration: .defaultMaterial) { navigator in
                 InboxScreen()
                     .topNavigationBarTitle("Inbox")
-                    .topNavigationBarSubtitle { Text("All messages • 127") }
+                    .topNavigationBarSubtitle("All messages • 127")
                     .topNavigationBarLeading {
                         Image(systemName: "person.circle.fill").font(.title2)
                     }
@@ -116,6 +116,128 @@ Use plain strings: .topNavigationBarTitle("Title"), .topNavigationBarSubtitle("S
 .topNavigationBarSubtitle { Text("Details").foregroundStyle(.secondary) }
 ```
 
+## Recommended integration pattern (app wrapper + design system)
+
+In production apps, it’s common to keep SUINavigationFusion “clean” and build a tiny wrapper module in your app
+that:
+
+- Pins a default `TopNavigationBarConfiguration` (your brand styles).
+- Exposes convenience APIs that accept your design-system components (e.g. a standard toolbar button view).
+- Optionally injects your design-system theme/context once, at the root.
+
+Example wrapper (rename `AppDesignSystem` / `ToolbarButton` / colors / fonts to match your project):
+
+```swift
+import SwiftUI
+import SUINavigationFusion
+import AppDesignSystem
+
+// periphery:ignore
+public extension View {
+    // MARK: - App-style top bar wrappers
+
+    func appNavigationBarTitle(_ title: String) -> some View {
+        topNavigationBarTitle(title)
+    }
+
+    func appNavigationBarTitle(_ text: @escaping () -> Text) -> some View {
+        topNavigationBarTitle(text)
+    }
+
+    func appNavigationBarSubtitle(_ subtitle: String) -> some View {
+        topNavigationBarSubtitle(subtitle)
+    }
+
+    func appNavigationBarSubtitle(_ text: @escaping () -> Text) -> some View {
+        topNavigationBarSubtitle(text)
+    }
+
+    func appNavigationBarHidesBackButton(_ hides: Bool = true) -> some View {
+        topNavigationBarHidesBackButton(hides)
+    }
+
+    func appNavigationBarLeading(
+        id: (any Hashable)? = nil,
+        @ViewBuilder _ content: () -> AppDesignSystem.ToolbarButton
+    ) -> some View {
+        topNavigationBarLeading(id: id, content)
+    }
+
+    func appNavigationBarTrailing(
+        id: (any Hashable)? = nil,
+        position: TrailingContentPosition = .primary,
+        @ViewBuilder _ content: () -> AppDesignSystem.ToolbarButton
+    ) -> some View {
+        topNavigationBarTrailing(id: id, position: position, content)
+    }
+
+    func appNavigationBarPrincipalView<Content: View>(
+        id: (any Hashable)? = nil,
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        topNavigationBarPrincipalView(id: id, content)
+    }
+
+    func appToolbarVisibility(
+        _ visibility: TopNavigationBarVisibility,
+        for section: TopNavigationBarSection
+    ) -> some View {
+        topNavigationBarVisibility(visibility, for: section)
+    }
+}
+
+extension TopNavigationBarConfiguration {
+    static let appNavigationBarConfiguration: TopNavigationBarConfiguration = {
+        TopNavigationBarConfiguration(
+            backgroundColor: AppDesignSystem.Colors.backgroundPrimary,
+            scrollDependentBackgroundOpacity: false,
+            dividerColor: AppDesignSystem.Colors.separator,
+            titleFont: AppDesignSystem.Fonts.navigationTitle,
+            titleFontColor: AppDesignSystem.Colors.textPrimary,
+            subtitleFont: AppDesignSystem.Fonts.navigationSubtitle,
+            subtitleFontColor: AppDesignSystem.Colors.textSecondary,
+            titleStackSpacing: nil, // use library default
+            tintColor: AppDesignSystem.Colors.accent
+        )
+    }()
+}
+
+// periphery:ignore
+public struct AppNavigationShell<Root: View>: View {
+    private let navigator: Navigator?
+    private let rootBuilder: (Navigator) -> Root
+
+    public init(@ViewBuilder root: @escaping (Navigator) -> Root) {
+        self.navigator = nil
+        self.rootBuilder = root
+    }
+
+    public init(navigator: Navigator, @ViewBuilder root: @escaping () -> Root) {
+        self.navigator = navigator
+        self.rootBuilder = { navigator in root() }
+    }
+
+    public var body: some View {
+        Group {
+            if let navigator {
+                NavigationShell(
+                    navigator: navigator,
+                    configuration: .appNavigationBarConfiguration,
+                    root: { rootBuilder(navigator) }
+                )
+            } else {
+                NavigationShell(
+                    configuration: .appNavigationBarConfiguration,
+                    root: rootBuilder
+                )
+            }
+        }
+        // Optional: set up design-system context here once for the whole app.
+        // .environmentObject(AppDesignSystem.Theme.shared)
+        .ignoresSafeArea(.all, edges: [.top, .bottom])
+    }
+}
+```
 
 ## Leading / trailing items
 
