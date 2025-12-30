@@ -114,13 +114,14 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             .environmentObject(progress)
             .topNavigationBarConfiguration(navigatorConfiguration)
             .environmentObject(self)
-        let hosting  = NavigationShellHostingController(rootView: content, navigationPageTransitionProgress: progress)
+        let hosting = NavigationShellHostingController(
+            rootView: content,
+            navigationPageTransitionProgress: progress,
+            disablesBackGesture: disableBackGesture
+        )
         
         navigationController.pushViewController(hosting, animated: animated)
         navigationController.setNavigationBarHidden(true, animated: false)
-        if let gesture = navigationController.interactivePopGestureRecognizer {
-            gesture.isEnabled = !disableBackGesture
-        }
     }
     
     /// Pops the top view controller.

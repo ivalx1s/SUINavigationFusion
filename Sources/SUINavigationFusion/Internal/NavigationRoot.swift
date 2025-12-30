@@ -245,9 +245,10 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIViewController {
         if let externalNavigator = navigator {
-            let navigationController = externalNavigator.resolveNavigationController() ?? NCUINavigationController()
+            let resolvedNavigationController = externalNavigator.resolveNavigationController()
+            let navigationController = resolvedNavigationController ?? NCUINavigationController()
 
-            if externalNavigator.resolveNavigationController() == nil {
+            if resolvedNavigationController == nil {
                 externalNavigator.attachNavigationController(navigationController)
             }
 

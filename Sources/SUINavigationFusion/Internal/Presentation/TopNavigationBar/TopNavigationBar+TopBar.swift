@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 extension TopNavigationBar {
     
@@ -181,7 +184,7 @@ extension TopNavigationBar.TopBar {
                                 .fill(Color.clear)
                                 .frame(width: 38, height: 44)
                                 .overlay(alignment: .leading) {
-                                    Image(icon.name, bundle: icon.bundle ?? .main)
+                                    backIcon(for: icon)
                                         .renderingMode(.template)
                                         .font(.title2.weight(.medium))
                                 }
@@ -202,6 +205,17 @@ extension TopNavigationBar.TopBar {
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
+        }
+
+        private func backIcon(for icon: TopNavigationBarConfiguration.BackButtonIconResource) -> Image {
+#if canImport(UIKit)
+            if let uiImage = UIImage(named: icon.name, in: icon.bundle, compatibleWith: nil) {
+                return Image(uiImage: uiImage)
+            }
+            return Image(systemName: icon.name)
+#else
+            return Image(icon.name, bundle: icon.bundle)
+#endif
         }
     }
     

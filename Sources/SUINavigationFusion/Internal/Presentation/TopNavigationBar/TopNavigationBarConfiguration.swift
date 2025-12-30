@@ -5,7 +5,8 @@ public struct TopNavigationBarConfiguration: Sendable {
     
     /// Represents a custom symbol or image asset used for the navigation back‑button.
     public struct BackButtonIconResource: Sendable {
-        /// Asset or SF Symbol name.
+        /// Asset name or SF Symbol name.
+        /// If an image with this name is not found in `bundle`, it will be treated as an SF Symbol name.
         public let name: String
         /// Bundle in which the asset lives. When `nil`, `Bundle.main` is used.
         public let bundle: Bundle?

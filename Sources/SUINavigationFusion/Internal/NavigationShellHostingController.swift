@@ -6,11 +6,22 @@ protocol NavigationTransitionProgressHolder: AnyObject {
 }
 
 @MainActor
-final class NavigationShellHostingController<Content: View>: UIHostingController<Content>, NavigationTransitionProgressHolder {
+protocol NavigationBackGesturePolicyProviding: AnyObject {
+    var disablesBackGesture: Bool { get }
+}
+
+@MainActor
+final class NavigationShellHostingController<Content: View>: UIHostingController<Content>, NavigationTransitionProgressHolder, NavigationBackGesturePolicyProviding {
     let navigationPageTransitionProgress: NavigationPageTransitionProgress
+    let disablesBackGesture: Bool
     
-    init(rootView: Content, navigationPageTransitionProgress: NavigationPageTransitionProgress) {
+    init(
+        rootView: Content,
+        navigationPageTransitionProgress: NavigationPageTransitionProgress,
+        disablesBackGesture: Bool = false
+    ) {
         self.navigationPageTransitionProgress = navigationPageTransitionProgress
+        self.disablesBackGesture = disablesBackGesture
         super.init(rootView: rootView)
     }
     
