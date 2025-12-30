@@ -2,7 +2,7 @@
 //  TrailingContentPosition.swift
 //  SUINavigationFusion
 //
-//  Created by Ivan Wb on 30.12.2025.
+//  Created by Ivan Oparin on 30.12.2025.
 //
 
 
