@@ -47,7 +47,7 @@ public struct TopNavigationBarConfiguration: Sendable {
     /// When `nil`, the weight embedded in `subtitleFont` (or the system default) is used.
     public let subtitleFontWeight: Font.Weight?
     /// Spacing applied between the title and subtitle labels.
-    /// When `nil`, the system default stack spacing is used.
+    /// When `nil`, a default iOS‑like spacing is used (currently `2`).
     public let titleStackSpacing: CGFloat?
     /// Tint color applied to navigation‑bar items (e.g. back button symbol).
     /// When `nil`, the system accent color is used.

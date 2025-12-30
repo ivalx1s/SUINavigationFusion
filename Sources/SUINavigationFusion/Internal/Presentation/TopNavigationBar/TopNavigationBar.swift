@@ -10,8 +10,8 @@ struct TopNavigationBar: ViewModifier {
     
     // Latest values coming from child views
     @State private var title: String?  = nil
-    @State private var subtitle:    String?  = nil
-    @State private var leadingView:  TopNavigationBarItemView? = nil
+    @State private var subtitle: String?  = nil
+    @State private var leadingView: TopNavigationBarItemView? = nil
     @State private var trailingPrimaryView: TopNavigationBarItemView? = nil
     @State private var trailingSecondaryView: TopNavigationBarItemView? = nil
     @State private var hidesBackButton: Bool? = false
@@ -19,9 +19,12 @@ struct TopNavigationBar: ViewModifier {
     @State private var titleTextView: Text? = nil
     @State private var currentSubtitleText: Text? = nil
     
+    @State private var principalView: TopNavigationPrincipalView? = nil
+    
     /// `true` when the scroll-view’s content has moved under the bar
     @State private var navigationBarOpaque = false
     
+    @State private var visibility: [Section: TopNavigationBar.ComponentVisibility] = [:]
     
     let isRoot: Bool
     
@@ -30,7 +33,7 @@ struct TopNavigationBar: ViewModifier {
             .navigationBarHidden(true)
             .navigationBarTitle("", displayMode: .inline)
             .navigationBarBackButtonHidden(true)
-            .safeAreaInset(edge: .top) {
+            .safeAreaInset(edge: .top, spacing: .zero) {
                 //  Custom top bar view, applied through inset semantics to support scroll-through behavior
                 TopBar(
                     isRoot: isRoot,
@@ -40,10 +43,12 @@ struct TopNavigationBar: ViewModifier {
                     trailingSecondaryView: trailingSecondaryView,
                     title: title,
                     titleTextView: titleTextView,
+                    principalView: principalView,
                     titleStackSpacing: topNavigationBarConfiguration.titleStackSpacing,
                     subtitle: subtitle,
                     currentSubtitleText: currentSubtitleText,
                     navigationBarOpaque: navigationBarOpaque,
+                    visibility: visibility,
                     pageTransitionProgress: navigationPageTransitionProgress.progress,
                     onBack: navigator.pop,
                     backButtonIcon: topNavigationBarConfiguration.backButtonIcon,
@@ -62,10 +67,10 @@ struct TopNavigationBar: ViewModifier {
                 .accentColor(topNavigationBarConfiguration.tintColor)
             }
             .onPreferenceChange(TopNavigationBarTitlePreferenceKey.self) { title in
-                Task { @MainActor in self.title    = title }
+                Task { @MainActor in self.title = title }
             }
             .onPreferenceChange(TopNavigationBarLeadingPreferenceKey.self)  { viewWrap in
-                Task { @MainActor in leadingView  = viewWrap }
+                Task { @MainActor in leadingView = viewWrap }
             }
             .onPreferenceChange(TopNavigationBarTrailingPrimaryPreferenceKey.self) { viewWrap in
                 Task { @MainActor in trailingPrimaryView = viewWrap }
@@ -74,21 +79,29 @@ struct TopNavigationBar: ViewModifier {
                 Task { @MainActor in trailingSecondaryView = viewWrap }
             }
             .onPreferenceChange(TopNavigationBarHidesBackButtonPreferenceKey.self) { hides in
-                Task { @MainActor in  hidesBackButton = hides  }
+                Task { @MainActor in hidesBackButton = hides  }
             }
             .onPreferenceChange(TopNavigationBarSubtitlePreferenceKey.self) { subtitle in
-                Task { @MainActor in  self.subtitle = subtitle }
+                Task { @MainActor in self.subtitle = subtitle }
             }
             .onPreferenceChange(TopNavigationBarSubtitleTextPreferenceKey.self) { subtitleText in
                 Task { @MainActor in self.currentSubtitleText = subtitleText  }
             }
             .onPreferenceChange(TopNavigationBarTitleTextPreferenceKey.self) { titleTextView in
-                Task { @MainActor in  self.titleTextView = titleTextView }
+                Task { @MainActor in self.titleTextView = titleTextView }
+            }
+            .onPreferenceChange(TopNavigationBarPrincipalViewPreferenceKey.self) { principalView in
+                Task { @MainActor in self.principalView = principalView }
             }
             .onPreferenceChange(
                 PositionObservingViewPreferenceKey.self,
                 perform: processScrollOffset
             )
+            .onPreferenceChange(TopNavigationBarVisibilityPreferenceKey.self) { visibility in
+                if let visibility {
+                    Task { @MainActor in self.visibility = visibility }
+                }
+            }
     }
     
     /// Handles scroll‑offset changes coming from `PositionObservingViewPreferenceKey`.

@@ -62,7 +62,7 @@ public extension View {
     @ViewBuilder
     func topNavigationBarTrailing<Content: View>(
         id: (any Hashable)? = nil,
-        position: TopNavigationBarTrailingContentPosition = .primary,
+        position: TrailingContentPosition = .primary,
         @ViewBuilder _ content: () -> Content
     ) -> some View {
         switch position {
@@ -78,9 +78,4 @@ public extension View {
             )
         }
     }
-}
-
-public enum TopNavigationBarTrailingContentPosition {
-    case primary
-    case secondary
 }

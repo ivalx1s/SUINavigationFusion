@@ -2,9 +2,9 @@ import SwiftUI
 
 extension TopNavigationBar {
     
-    // Container that assembles every piece of the bar.
+    // Контейнер, собирающий все части бара.
     struct TopBar: View {
-        // MARK: Parameters passed from the parent modifier
+        // MARK: Параметры, передаваемые из модификатора
         let isRoot: Bool
         let hidesBackButton: Bool?
         let leadingView: TopNavigationBarItemView?
@@ -12,10 +12,12 @@ extension TopNavigationBar {
         let trailingSecondaryView: TopNavigationBarItemView?
         let title: String?
         let titleTextView: Text?
+        let principalView: TopNavigationPrincipalView?
         let titleStackSpacing: CGFloat?
         let subtitle: String?
         let currentSubtitleText: Text?
         let navigationBarOpaque: Bool
+        let visibility: [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]
         
         let pageTransitionProgress: Double
         let onBack: @MainActor () -> Void
@@ -33,51 +35,86 @@ extension TopNavigationBar {
         let scrollDependentBackgroundOpacity: Bool
         let dividerColor: Color?
         
+        // MARK: - Измеренные ширины боковых кластеров
+        @State private var leftWidth:  CGFloat = 0
+        @State private var rightWidth: CGFloat = 0
+        
+        // Базовые системные поля, как у UINavigationBar.
+        private let baseInset: CGFloat = 16
+        
+        // Есть ли back?
+        private var showsBack: Bool {
+            (!isRoot) && ((hidesBackButton ?? false) == false)
+        }
+        
+        private var leftInset: CGFloat { baseInset }
+        private var rightInset: CGFloat { baseInset }
+        
+        // Чтобы заголовок оставался строго по центру, вырезаем с обеих сторон
+        private var symmetricGuard: CGFloat { max(leftWidth + leftInset, rightWidth + rightInset) }
+        
         var body: some View {
-            HStack(spacing: 0) {
-                BackButton(
-                    isRoot: isRoot,
-                    hidesBackButton: hidesBackButton,
-                    transitionProgressFraction: pageTransitionProgress,
-                    onBack: onBack,
-                    backButtonIcon: backButtonIcon
-                )
-                
-                if let leadingView {
-                    LeadingItem(leading: leadingView, pageTransitionProgress: pageTransitionProgress)
+            ZStack {
+                // --- Центр (title / principal)
+                Group {
+                    if visibility[.principal] != .hidden, let principalView {
+                        principalView
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        TitleStack(
+                            currentTitle: title,
+                            titleTextView: titleTextView,
+                            spacingOverride: titleStackSpacing ?? 2,
+                            subtitle: subtitle,
+                            subtitleText: currentSubtitleText,
+                            progress: pageTransitionProgress,
+                            titleFont: titleFont,
+                            titleFontWeight: titleFontWeight,
+                            titleFontColor: titleFontColor,
+                            subtitleFont: subtitleFont,
+                            subtitleFontWeight: subtitleFontWeight,
+                            subtitleFontColor: subtitleFontColor
+                        )
+                        .frame(maxWidth: .infinity)
+                        .allowsHitTesting(false)
+                    }
                 }
+                .padding(.leading,  symmetricGuard)
+                .padding(.trailing, symmetricGuard)
+                .frame(height: 44)
                 
-                Spacer(minLength: 0)
-                
-                if let trailingSecondaryView {
-                    TrailingSecondary(
-                        trailingSecondaryView: trailingSecondaryView,
-                        trailingExists: trailingPrimaryView != nil,
-                        progress: pageTransitionProgress
+                // --- Боковые кластеры поверх центра
+                HStack(spacing: 0) {
+                    LeftCluster(
+                        isRoot: isRoot,
+                        hidesBackButton: hidesBackButton,
+                        progress: pageTransitionProgress,
+                        onBack: onBack,
+                        backButtonIcon: backButtonIcon,
+                        leadingView: leadingView,
+                        isLeadingViewVisible: visibility[.leading] != .hidden
                     )
+                    .background(WidthReader(key: LeftWidthKey.self))   // измеряем ширину слева
+                    
+                    Spacer(minLength: 0)
+                    
+                    RightCluster(
+                        progress: pageTransitionProgress,
+                        trailingPrimaryView: trailingPrimaryView,
+                        trailingSecondaryView: trailingSecondaryView,
+                        visibility: visibility
+                    )
+                    .background(WidthReader(key: RightWidthKey.self))  // измеряем ширину справа
                 }
-                
-                if let trailingPrimaryView {
-                    TrailingPrimary(trailing: trailingPrimaryView, pageTransitionProgress: pageTransitionProgress)
-                }
+                // разные поля слева/справа — но центр всё равно останется по центру,
+                // т.к. выше мы используем symmetricGuard.
+                .padding(.leading, leftInset)
+                .padding(.trailing, rightInset)
+                .frame(height: 44)
             }
             .frame(height: 44)
-            .overlay {
-                TitleStack(
-                    currentTitle: title,
-                    titleTextView: titleTextView,
-                    titleStackSpacing: titleStackSpacing,
-                    subtitle: subtitle,
-                    subtitleText: currentSubtitleText,
-                    progress: pageTransitionProgress,
-                    titleFont: titleFont,
-                    titleFontWeight: titleFontWeight,
-                    titleFontColor: titleFontColor,
-                    subtitleFont: subtitleFont,
-                    subtitleFontWeight: subtitleFontWeight,
-                    subtitleFontColor: subtitleFontColor
-                )
-            }
+            .onPreferenceChange(LeftWidthKey.self)  { leftWidth  = $0 }
+            .onPreferenceChange(RightWidthKey.self) { rightWidth = $0 }
             .background {
                 BarBackground(
                     navigationBarOpaque: navigationBarOpaque,
@@ -89,11 +126,37 @@ extension TopNavigationBar {
             }
         }
     }
+    
 }
 
-// MARK: – Sub‑views
+// MARK: – Локальные preference keys для измерения ширины
+private struct LeftWidthKey: @MainActor PreferenceKey {
+    @MainActor static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+private struct RightWidthKey: @MainActor PreferenceKey {
+    @MainActor static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Прозрачный измеритель ширины.
+private struct WidthReader<K: PreferenceKey>: View where K.Value == CGFloat {
+    var key: K.Type
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .preference(key: key, value: proxy.size.width)
+        }
+    }
+}
+
+// MARK: – Sub-views
 extension TopNavigationBar.TopBar {
-    // Back‑navigation button.
+    // Кнопка назад.
     struct BackButton: View {
         let isRoot: Bool
         let hidesBackButton: Bool?
@@ -102,14 +165,18 @@ extension TopNavigationBar.TopBar {
         let backButtonIcon: TopNavigationBarConfiguration.BackButtonIconResource?
         
         private var opacity: Double {
-            max(0, 1 - min(transitionProgressFraction / max(0.001, titleProgressThreshold), 1))
+            // TODO: PMA-17561
+//            max(0, 1 - min(transitionProgressFraction / max(0.001, titleProgressThreshold), 1))
+            1
         }
         
         var body: some View {
-            VStack(spacing: 0) {
+            Group {
                 if !isRoot, let hidesBackButton, !hidesBackButton {
                     if let icon = backButtonIcon {
                         Button(action: onBack) {
+                            // Зона тапа 38×44, без внутренних сдвигов — чтобы левая грань
+                            // иконки визуально совпала с полем контейнера.
                             Rectangle()
                                 .fill(Color.clear)
                                 .frame(width: 38, height: 44)
@@ -117,7 +184,6 @@ extension TopNavigationBar.TopBar {
                                     Image(icon.name, bundle: icon.bundle ?? .main)
                                         .renderingMode(.template)
                                         .font(.title2.weight(.medium))
-                                        .padding(.leading, 8)
                                 }
                                 .opacity(opacity)
                         }
@@ -129,86 +195,148 @@ extension TopNavigationBar.TopBar {
                                 .overlay(alignment: .leading) {
                                     Image(systemName: "chevron.backward")
                                         .font(.title2.weight(.medium))
-                                        .padding(.leading, 8)
                                 }
                                 .opacity(opacity)
                         }
                     }
                 }
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
     
-    // Leading custom item.
-    struct LeadingItem: View {
-        let leading: TopNavigationBarItemView
-        let pageTransitionProgress: Double
+    // Левый кластер = Back + кастомный leading (измеряются вместе).
+    private struct LeftCluster: View {
+        let isRoot: Bool
+        let hidesBackButton: Bool?
+        let progress: Double
+        let onBack: () -> Void
+        let backButtonIcon: TopNavigationBarConfiguration.BackButtonIconResource?
+        let leadingView: TopNavigationBarItemView?
+        let isLeadingViewVisible: Bool
         
-        private var opacity: Double {
-            max(
-                0,
-                1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1)
-            )
+        private var showsBack: Bool {
+            (!isRoot) && ((hidesBackButton ?? false) == false)
         }
         
         var body: some View {
             HStack(spacing: 0) {
-                leading
-                    .equatable()
-                    .clipShape(Rectangle())
-                Spacer(minLength: 0)
+                BackButton(
+                    isRoot: isRoot,
+                    hidesBackButton: hidesBackButton,
+                    transitionProgressFraction: progress,
+                    onBack: onBack,
+                    backButtonIcon: backButtonIcon
+                )
+                
+                if isLeadingViewVisible, let leadingView {
+                    LeadingItem(
+                        leading: leadingView,
+                        pageTransitionProgress: progress,
+                        hasBackButton: showsBack
+                    )
+                }
             }
-            .padding(.leading, 8)
-            .opacity(opacity)
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
     
-    // Secondary (left‑most) trailing item.
+    // Правый кластер = secondary + primary (измеряются вместе).
+    private struct RightCluster: View {
+        let progress: Double
+        let trailingPrimaryView: TopNavigationBarItemView?
+        let trailingSecondaryView: TopNavigationBarItemView?
+        let visibility: [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]
+        
+        var body: some View {
+            HStack(spacing: 16) {
+                let hideAllTrailing = visibility[.trailing] == .hidden
+                
+                if !hideAllTrailing,
+                   visibility[.trailingPosition(.secondary)] != .hidden,
+                   let trailingSecondaryView {
+                    TrailingSecondary(
+                        trailingSecondaryView: trailingSecondaryView,
+                        progress: progress
+                    )
+                }
+                
+                if !hideAllTrailing,
+                   visibility[.trailingPosition(.primary)] != .hidden,
+                   let trailingPrimaryView {
+                    TrailingPrimary(trailing: trailingPrimaryView, pageTransitionProgress: progress)
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+    
+    // Кастомный leading-элемент.
+    struct LeadingItem: View {
+        let leading: TopNavigationBarItemView
+        let pageTransitionProgress: Double
+        let hasBackButton: Bool
+        
+        private var opacity: Double {
+            // TODO: PMA-17561
+//            max(0, 1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1))
+            1
+        }
+        
+        var body: some View {
+            leading
+                .equatable()
+            // Если рядом есть back — небольшой зазор 4pt между back и leading.
+                .padding(.leading, hasBackButton ? 4 : 0)
+                .opacity(opacity)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+    
+    // Вторичный (левее) элемент справа.
     struct TrailingSecondary: View {
         let trailingSecondaryView: TopNavigationBarItemView
-        let trailingExists: Bool
         let progress: Double
         
         private var opacity: Double {
-            max(
-                0,
-                1 - min(Double(progress) / max(0.001, titleProgressThreshold), 1)
-            )
+            // TODO: PMA-17561
+//            max(0, 1 - min(Double(progress) / max(0.001, titleProgressThreshold), 1))
+            1
         }
         
         var body: some View {
             trailingSecondaryView
                 .equatable()
-                .padding(.trailing, trailingExists ? 4 : 8)
                 .opacity(opacity)
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
     
-    // Primary (right‑most) trailing item.
+    // Основной (правее всех) элемент справа.
     struct TrailingPrimary: View {
         let trailing: TopNavigationBarItemView
         let pageTransitionProgress: Double
         
         private var opacity: Double {
-            max(
-                0,
-                1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1)
-            )
+            // TODO: PMA-17561
+//            max(0, 1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1))
+            1
         }
         
         var body: some View {
             trailing
                 .equatable()
-                .padding(.trailing, 16)
+            // Без доп. трэйлинга — дистанцию до края контролирует rightInset контейнера.
                 .opacity(opacity)
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
     
-    // Title & subtitle stack.
+    // Заголовок и подзаголовок.
     struct TitleStack: View {
         let currentTitle: String?
         let titleTextView: Text?
-        let titleStackSpacing: CGFloat?
+        let spacingOverride: CGFloat
         let subtitle: String?
         let subtitleText: Text?
         let progress: Double
@@ -220,54 +348,51 @@ extension TopNavigationBar.TopBar {
         let subtitleFontWeight: Font.Weight?
         let subtitleFontColor: Color?
         
-        private var offset: CGFloat { titleHorizontalOffset * progress }
-        
         private var opacity: Double {
-            max(
-                0,
-                1 - min(Double(progress) / max(0.001, titleProgressThreshold), 1)
-            )
+            // TODO: PMA-17561
+//            max(0, 1 - min(Double(progress) / max(0.001, titleProgressThreshold), 1))
+            1
         }
         
         var body: some View {
-            VStack(spacing: titleStackSpacing ?? 16) {
+            VStack(spacing: spacingOverride) {
                 if let titleTextView {
                     titleTextView
-                        .offset(x: offset)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .opacity(opacity)
+                        .multilineTextAlignment(.center)
                 } else if let title = currentTitle {
                     Text(title)
-                        .font(
-                            (titleFont ?? Font.headline)
-                                .weight(titleFontWeight ?? .regular)
-                        )
+                        .font((titleFont ?? .headline).weight(titleFontWeight ?? .regular))
                         .foregroundStyle(titleFontColor ?? Color(uiColor: .label))
-                        .offset(x: offset)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .opacity(opacity)
+                        .multilineTextAlignment(.center)
                 }
                 
                 if let subtitleText {
                     subtitleText
-                        .offset(x: offset)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .opacity(opacity)
+                        .multilineTextAlignment(.center)
                 } else if let subtitle {
                     Text(subtitle)
-                        .font(
-                            (subtitleFont ?? Font.subheadline)
-                                .weight(subtitleFontWeight ?? .regular)
-                        )
-                        .foregroundStyle(
-                            subtitleFontColor ?? Color(uiColor: .secondaryLabel)
-                        )
-                        .offset(x: offset)
+                        .font((subtitleFont ?? .subheadline).weight(subtitleFontWeight ?? .regular))
+                        .foregroundStyle(subtitleFontColor ?? Color(uiColor: .secondaryLabel))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .opacity(opacity)
+                        .multilineTextAlignment(.center)
                 }
             }
             .animation(.linear.speed(2), value: progress)
         }
     }
     
-    // Background + divider.
+    // Фон + разделитель.
     struct BarBackground: View {
         let navigationBarOpaque: Bool
         
@@ -281,25 +406,19 @@ extension TopNavigationBar.TopBar {
                 if let material = backgroundMaterial {
                     Rectangle()
                         .fill(material)
-                        .opacity(
-                            scrollDependentBackgroundOpacity ? (navigationBarOpaque ? 1 : 0) : 1
-                        )
+                        .opacity(scrollDependentBackgroundOpacity ? (navigationBarOpaque ? 1 : 0) : 1)
                         .ignoresSafeArea(.all, edges: .top)
                         .frame(height: 44)
                 } else if let color = backgroundColor {
                     Rectangle()
                         .fill(color)
-                        .opacity(
-                            scrollDependentBackgroundOpacity ? (navigationBarOpaque ? 1 : 0) : 1
-                        )
+                        .opacity(scrollDependentBackgroundOpacity ? (navigationBarOpaque ? 1 : 0) : 1)
                         .ignoresSafeArea(.all, edges: .top)
                         .frame(height: 44)
                 } else {
                     Rectangle()
                         .fill(Material.regular)
-                        .opacity(
-                            scrollDependentBackgroundOpacity ? (navigationBarOpaque ? 1 : 0) : 1
-                        )
+                        .opacity(scrollDependentBackgroundOpacity ? (navigationBarOpaque ? 1 : 0) : 1)
                         .ignoresSafeArea(.all, edges: .top)
                         .frame(height: 44)
                 }
@@ -307,19 +426,15 @@ extension TopNavigationBar.TopBar {
                 if let divider = dividerColor {
                     Rectangle()
                         .fill(divider)
-                        .opacity(
-                            scrollDependentBackgroundOpacity ? (navigationBarOpaque ? 1 : 0) : 1
-                        )
+                        .opacity(scrollDependentBackgroundOpacity ? (navigationBarOpaque ? 1 : 0) : 1)
                         .frame(height: 0.5)
                 }
             }
         }
     }
+    
 }
 
-
-// MARK: – Constants controlling title movement & fade
-/// Progress (0…1) after which the title is fully transparent.
+// MARK: – Константы анимации заголовка
+/// Прогресс (0…1), после которого заголовок полностью прозрачный.
 private let titleProgressThreshold: Double = 0.5
-/// Horizontal offset applied to the title when the gesture completes.
-private let titleHorizontalOffset: CGFloat = -50

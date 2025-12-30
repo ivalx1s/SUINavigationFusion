@@ -1,3 +1,8 @@
+//
+//  Navigation.swift
+//  Core
+//
+
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -72,7 +77,8 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
     @MainActor
     final class Coordinator: NSObject, UINavigationControllerDelegate {
         let progress = NavigationPageTransitionProgress()
-        
+        var injectedNavigator: Navigator?
+
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
         private var isPushTransition: Bool = true
@@ -221,46 +227,113 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
     
     func makeCoordinator() -> Coordinator { Coordinator() }
     
-    private func makeRootViewController(for navigator: Navigator) -> UIViewController {
-        let transitionProgress = NavigationPageTransitionProgress()
-        let hostedRootView = rootBuilder(navigator)
-            .topNavigationBar(isRoot: true)
-            .topNavigationBarConfiguration(configuration)
-            .environmentObject(transitionProgress)
-            .environmentObject(navigator)
+    private func makeRootViewController(
+        for navigator: Navigator,
+        progress: NavigationPageTransitionProgress
+    ) -> NavigationShellHostingController<DecoratedRoot<Root>> {
+        let decoratedRoot = DecoratedRoot(
+            content: rootBuilder(navigator),
+            configuration: configuration,
+            progress: progress,
+            navigator: navigator
+        )
         return NavigationShellHostingController(
-            rootView: hostedRootView,
-            navigationPageTransitionProgress: transitionProgress
+            rootView: decoratedRoot,
+            navigationPageTransitionProgress: progress
         )
     }
-    
+
     func makeUIViewController(context: Context) -> UIViewController {
         if let externalNavigator = navigator {
             let navigationController = externalNavigator.resolveNavigationController() ?? NCUINavigationController()
-            
+
             if externalNavigator.resolveNavigationController() == nil {
-                externalNavigator.setNavigationController(navigationController)
+                externalNavigator.attachNavigationController(navigationController)
             }
-            
-            let transitionProgress = NavigationPageTransitionProgress()
+
+            let transitionProgress = context.coordinator.progress
+            context.coordinator.injectedNavigator = externalNavigator
+
             externalNavigator.navigationPageTransitionProgress = transitionProgress
             externalNavigator.topNavigationBarConfiguration = configuration
-            navigationController.viewControllers = [makeRootViewController(for: externalNavigator)]
+            let rootController = makeRootViewController(
+                for: externalNavigator,
+                progress: transitionProgress
+            )
+            navigationController.viewControllers = [rootController]
             navigationController.setNavigationBarHidden(true, animated: false)
             navigationController.delegate = context.coordinator
             return navigationController
         } else {
             let navigationController = NCUINavigationController()
-            let autoInjectedNavigator = Navigator(resolveNavigationController: { [weak navigationController] in navigationController })
-            let transitionProgress = NavigationPageTransitionProgress()
+            let autoInjectedNavigator = Navigator(resolveNavigationController: { [weak navigationController] in
+                navigationController
+            })
+            autoInjectedNavigator.attachNavigationController(navigationController)
+
+            let transitionProgress = context.coordinator.progress
+            context.coordinator.injectedNavigator = autoInjectedNavigator
+
             autoInjectedNavigator.navigationPageTransitionProgress = transitionProgress
             autoInjectedNavigator.topNavigationBarConfiguration = configuration
-            navigationController.viewControllers = [makeRootViewController(for: autoInjectedNavigator)]
+            let rootController = makeRootViewController(
+                for: autoInjectedNavigator,
+                progress: transitionProgress
+            )
+            navigationController.viewControllers = [rootController]
             navigationController.setNavigationBarHidden(true, animated: false)
             navigationController.delegate = context.coordinator
             return navigationController
         }
     }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {
+        guard
+            let navigationController = controller as? NCUINavigationController,
+            let hosting = navigationController.viewControllers.first as? NavigationShellHostingController<DecoratedRoot<Root>>,
+            let navigator = context.coordinator.injectedNavigator
+        else { return }
+
+        let progress = context.coordinator.progress
+        navigator.navigationPageTransitionProgress = progress
+        navigator.topNavigationBarConfiguration = configuration
+
+        let updatedRoot = DecoratedRoot(
+            content: rootBuilder(navigator),
+            configuration: configuration,
+            progress: progress,
+            navigator: navigator
+        )
+
+        hosting.rootView = updatedRoot
+    }
     
-    func updateUIViewController(_: UIViewController, context _: Context) {}
+    static func dismantleUIViewController(_ uiViewController: UIViewController, coordinator: Coordinator) {
+        guard
+            let navigationController = uiViewController as? NCUINavigationController,
+            let navigator = coordinator.injectedNavigator
+        else {
+            return
+        }
+        
+        Task { @MainActor in
+            navigator.detachNavigationController(navigationController)
+        }
+    }
+}
+
+@MainActor
+private struct DecoratedRoot<Content: View>: View {
+    let content: Content
+    let configuration: TopNavigationBarConfiguration
+    let progress: NavigationPageTransitionProgress
+    let navigator: Navigator
+
+    var body: some View {
+        content
+            .topNavigationBar(isRoot: true)
+            .topNavigationBarConfiguration(configuration)
+            .environmentObject(progress)
+            .environmentObject(navigator)
+    }
 }

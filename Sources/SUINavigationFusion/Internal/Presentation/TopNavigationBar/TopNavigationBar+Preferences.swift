@@ -29,18 +29,38 @@ struct TopNavigationBarItemView: Equatable, View {
     }
 }
 
+struct TopNavigationPrincipalView: Equatable, View {
+    private let id: Int
+    private let view: AnyView
+    
+    init(id: Int? = nil, view: AnyView) {
+        if let id {
+            self.id = id
+        } else {
+            self.id = UUID().hashValue
+        }
+        self.view = view
+    }
+    
+    nonisolated static func == (lhs: TopNavigationPrincipalView, rhs: TopNavigationPrincipalView) -> Bool { lhs.id == rhs.id }
+    
+    var body: some View {
+        view
+    }
+}
+
 // MARK: – Preference keys that bubble ↑
 struct TopNavigationBarTitlePreferenceKey: PreferenceKey {
     static let defaultValue: String? = nil
     static func reduce(value: inout String?, nextValue: () -> String?) {
-        if let next = nextValue() { value = next }          
+        if let next = nextValue() { value = next }
     }
 }
 
 struct TopNavigationBarTitleTextPreferenceKey: PreferenceKey {
     static let defaultValue: Text? = nil
     static func reduce(value: inout Text?, nextValue: () -> Text?) {
-        if let next = nextValue() { value = next }          
+        if let next = nextValue() { value = next }
     }
 }
 
@@ -48,14 +68,14 @@ struct TopNavigationBarTitleTextPreferenceKey: PreferenceKey {
 struct TopNavigationBarSubtitlePreferenceKey: PreferenceKey {
     static let defaultValue: String? = nil
     static func reduce(value: inout String?, nextValue: () -> String?) {
-        if let next = nextValue() { value = next }          
+        if let next = nextValue() { value = next }
     }
 }
 
 struct TopNavigationBarSubtitleTextPreferenceKey: PreferenceKey {
     static let defaultValue: Text? = nil
     static func reduce(value: inout Text?, nextValue: () -> Text?) {
-        if let next = nextValue() { value = next }      
+        if let next = nextValue() { value = next }
     }
 }
 
@@ -83,6 +103,23 @@ struct TopNavigationBarTrailingPrimaryPreferenceKey: PreferenceKey {
 struct TopNavigationBarTrailingSecondaryPreferenceKey: PreferenceKey {
     static let defaultValue: TopNavigationBarItemView? = nil
     static func reduce(value: inout TopNavigationBarItemView?, nextValue: () -> TopNavigationBarItemView?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+struct TopNavigationBarPrincipalViewPreferenceKey: PreferenceKey {
+    static let defaultValue: TopNavigationPrincipalView? = nil
+    static func reduce(value: inout TopNavigationPrincipalView?, nextValue: () -> TopNavigationPrincipalView?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+struct TopNavigationBarVisibilityPreferenceKey: PreferenceKey {
+    static let defaultValue: [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]? = nil
+    static func reduce(
+        value: inout [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]?,
+        nextValue: () -> [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]?
+    ) {
         if let next = nextValue() { value = next }
     }
 }
