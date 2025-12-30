@@ -202,7 +202,6 @@ extension TopNavigationBarConfiguration {
     }()
 }
 
-// periphery:ignore
 public struct AppNavigationShell<Root: View>: View {
     private let navigator: Navigator?
     private let rootBuilder: (Navigator) -> Root
@@ -232,8 +231,6 @@ public struct AppNavigationShell<Root: View>: View {
                 )
             }
         }
-        // Optional: set up design-system context here once for the whole app.
-        // .environmentObject(AppDesignSystem.Theme.shared)
         .ignoresSafeArea(.all, edges: [.top, .bottom])
     }
 }
