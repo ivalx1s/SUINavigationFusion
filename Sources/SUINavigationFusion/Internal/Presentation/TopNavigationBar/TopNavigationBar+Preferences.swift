@@ -120,6 +120,11 @@ struct TopNavigationBarVisibilityPreferenceKey: PreferenceKey {
         value: inout [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]?,
         nextValue: () -> [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]?
     ) {
-        if let next = nextValue() { value = next }
+        guard let next = nextValue() else { return }
+        if value == nil {
+            value = next
+            return
+        }
+        value?.merge(next, uniquingKeysWith: { _, new in new })
     }
 }

@@ -78,4 +78,17 @@ public extension View {
             )
         }
     }
+
+    /// Supplies a custom center (principal) view for the navigation bar.
+    /// When set, it replaces the default title/subtitle stack.
+    @ViewBuilder
+    func topNavigationBarPrincipalView<Content: View>(
+        id: (any Hashable)? = nil,
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        preference(
+            key: TopNavigationBarPrincipalViewPreferenceKey.self,
+            value: TopNavigationPrincipalView(id: id?.hashValue, view: AnyView(content()))
+        )
+    }
 }
