@@ -10,19 +10,22 @@ extension View {
 }
 
 struct TopNavigationBarItemView: Equatable, View {
-    private let id: Int
+    private let id: AnyHashable
+    private let updateKey: AnyHashable?
     private let view: AnyView
     
-    init(id: Int? = nil, view: AnyView) {
-        if let id {
-            self.id = id
-        } else {
-            self.id = UUID().hashValue
-        }
+    /// - Parameters:
+    ///   - id: Stable identity for diffing and update coalescing.
+    ///   - updateKey: Use this to force an update when `id` stays the same but the rendered content changes.
+    init(id: AnyHashable, updateKey: AnyHashable? = nil, view: AnyView) {
+        self.id = id
+        self.updateKey = updateKey
         self.view = view
     }
     
-    nonisolated static func == (lhs: TopNavigationBarItemView, rhs: TopNavigationBarItemView) -> Bool { lhs.id == rhs.id }
+    nonisolated static func == (lhs: TopNavigationBarItemView, rhs: TopNavigationBarItemView) -> Bool {
+        lhs.id == rhs.id && lhs.updateKey == rhs.updateKey
+    }
     
     var body: some View {
         view
@@ -30,19 +33,22 @@ struct TopNavigationBarItemView: Equatable, View {
 }
 
 struct TopNavigationPrincipalView: Equatable, View {
-    private let id: Int
+    private let id: AnyHashable
+    private let updateKey: AnyHashable?
     private let view: AnyView
     
-    init(id: Int? = nil, view: AnyView) {
-        if let id {
-            self.id = id
-        } else {
-            self.id = UUID().hashValue
-        }
+    /// - Parameters:
+    ///   - id: Stable identity for diffing and update coalescing.
+    ///   - updateKey: Use this to force an update when `id` stays the same but the rendered content changes.
+    init(id: AnyHashable, updateKey: AnyHashable? = nil, view: AnyView) {
+        self.id = id
+        self.updateKey = updateKey
         self.view = view
     }
     
-    nonisolated static func == (lhs: TopNavigationPrincipalView, rhs: TopNavigationPrincipalView) -> Bool { lhs.id == rhs.id }
+    nonisolated static func == (lhs: TopNavigationPrincipalView, rhs: TopNavigationPrincipalView) -> Bool {
+        lhs.id == rhs.id && lhs.updateKey == rhs.updateKey
+    }
     
     var body: some View {
         view

@@ -157,25 +157,28 @@ public extension View {
     }
 
     func appNavigationBarLeading(
-        id: (any Hashable)? = nil,
+        id: AnyHashable? = nil,
+        updateKey: AnyHashable? = nil,
         @ViewBuilder _ content: () -> AppDesignSystem.ToolbarButton
     ) -> some View {
-        topNavigationBarLeading(id: id, content)
+        topNavigationBarLeading(id: id, updateKey: updateKey, content)
     }
-
+    
     func appNavigationBarTrailing(
-        id: (any Hashable)? = nil,
+        id: AnyHashable? = nil,
+        updateKey: AnyHashable? = nil,
         position: TrailingContentPosition = .primary,
         @ViewBuilder _ content: () -> AppDesignSystem.ToolbarButton
     ) -> some View {
-        topNavigationBarTrailing(id: id, position: position, content)
+        topNavigationBarTrailing(id: id, updateKey: updateKey, position: position, content)
     }
-
+    
     func appNavigationBarPrincipalView<Content: View>(
-        id: (any Hashable)? = nil,
+        id: AnyHashable? = nil,
+        updateKey: AnyHashable? = nil,
         @ViewBuilder _ content: () -> Content
     ) -> some View {
-        topNavigationBarPrincipalView(id: id, content)
+        topNavigationBarPrincipalView(id: id, updateKey: updateKey, content)
     }
 
     func appToolbarVisibility(

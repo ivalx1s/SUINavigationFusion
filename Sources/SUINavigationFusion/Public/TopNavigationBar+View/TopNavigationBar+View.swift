@@ -44,51 +44,114 @@ public extension View {
     }
     
     /// Supplies a custom leading‑side view (e.g. avatar or logo).
+    ///
+    /// - Parameters:
+    ///   - id: Stable identity for this item. If `nil`, a stable per-view fallback id is generated.
+    ///   - updateKey: Provide this when the rendered content can change while `id` stays the same
+    ///     (e.g. badge count). Changing `updateKey` forces the bar to refresh the item.
     @ViewBuilder
-    func topNavigationBarLeading<Content: View>(id: (any Hashable)? = nil, @ViewBuilder _ content: () -> Content) -> some View {
-        preference(key: TopNavigationBarLeadingPreferenceKey.self,
-                   value: TopNavigationBarItemView(id: id?.hashValue, view: AnyView(content())))
+    func topNavigationBarLeading<Content: View>(
+        id: AnyHashable? = nil,
+        updateKey: AnyHashable? = nil,
+        @ViewBuilder _ content: @escaping () -> Content
+    ) -> some View {
+        modifier(TopNavigationBarItemPreferenceWriter(id: id, updateKey: updateKey, preference: .leading, content: content))
     }
     
     /// Supplies a custom trailing‑side view (e.g. action buttons).
+    ///
+    /// - Parameters:
+    ///   - id: Stable identity for this item. If `nil`, a stable per-view fallback id is generated.
+    ///   - updateKey: Provide this when the rendered content can change while `id` stays the same.
     @ViewBuilder
-    func topNavigationBarTrailingPrimary<Content: View>(id: (any Hashable)? = nil, @ViewBuilder _ content: () -> Content) -> some View {
-        preference(key: TopNavigationBarTrailingPrimaryPreferenceKey.self,
-                   value: TopNavigationBarItemView(id: id?.hashValue, view: AnyView(content())))
+    func topNavigationBarTrailingPrimary<Content: View>(
+        id: AnyHashable? = nil,
+        updateKey: AnyHashable? = nil,
+        @ViewBuilder _ content: @escaping () -> Content
+    ) -> some View {
+        modifier(TopNavigationBarItemPreferenceWriter(id: id, updateKey: updateKey, preference: .trailing(.primary), content: content))
     }
     
     /// Supplies an additional trailing‑side view (e.g. secondary action).
     /// Useful when two buttons are needed on the right.
+    ///
+    /// - Parameters:
+    ///   - id: Stable identity for this item. If `nil`, a stable per-view fallback id is generated.
+    ///   - updateKey: Provide this when the rendered content can change while `id` stays the same.
+    ///   - position: Which trailing slot to use.
     @ViewBuilder
     func topNavigationBarTrailing<Content: View>(
-        id: (any Hashable)? = nil,
+        id: AnyHashable? = nil,
+        updateKey: AnyHashable? = nil,
         position: TrailingContentPosition = .primary,
-        @ViewBuilder _ content: () -> Content
+        @ViewBuilder _ content: @escaping () -> Content
     ) -> some View {
-        switch position {
-        case .primary:
-            preference(
-                key: TopNavigationBarTrailingPrimaryPreferenceKey.self,
-                value: TopNavigationBarItemView(id: id?.hashValue, view: AnyView(content()))
-            )
-        case .secondary:
-            preference(
-                key: TopNavigationBarTrailingSecondaryPreferenceKey.self,
-                value: TopNavigationBarItemView(id: id?.hashValue, view: AnyView(content()))
-            )
-        }
+        modifier(TopNavigationBarItemPreferenceWriter(id: id, updateKey: updateKey, preference: .trailing(position), content: content))
     }
 
     /// Supplies a custom center (principal) view for the navigation bar.
     /// When set, it replaces the default title/subtitle stack.
+    ///
+    /// - Parameters:
+    ///   - id: Stable identity for this view. If `nil`, a stable per-view fallback id is generated.
+    ///   - updateKey: Provide this when the rendered content can change while `id` stays the same.
     @ViewBuilder
     func topNavigationBarPrincipalView<Content: View>(
-        id: (any Hashable)? = nil,
-        @ViewBuilder _ content: () -> Content
+        id: AnyHashable? = nil,
+        updateKey: AnyHashable? = nil,
+        @ViewBuilder _ content: @escaping () -> Content
     ) -> some View {
-        preference(
+        modifier(TopNavigationBarPrincipalPreferenceWriter(id: id, updateKey: updateKey, content: content))
+    }
+}
+
+private enum TopNavigationBarItemPreference {
+    case leading
+    case trailing(TrailingContentPosition)
+}
+
+private struct TopNavigationBarItemPreferenceWriter<Item: View>: ViewModifier {
+    let id: AnyHashable?
+    let updateKey: AnyHashable?
+    let preference: TopNavigationBarItemPreference
+    let content: () -> Item
+
+    // A stable fallback id for cases where the caller doesn't provide one.
+    // This avoids churn compared to generating a new UUID/hash on every render.
+    @State private var fallbackID = AnyHashable(UUID())
+
+    private var resolvedID: AnyHashable { id ?? fallbackID }
+
+    func body(content root: Content) -> some View {
+        let itemView = TopNavigationBarItemView(id: resolvedID, updateKey: updateKey, view: AnyView(content()))
+
+        switch preference {
+        case .leading:
+            root.preference(key: TopNavigationBarLeadingPreferenceKey.self, value: itemView)
+        case let .trailing(position):
+            switch position {
+            case .primary:
+                root.preference(key: TopNavigationBarTrailingPrimaryPreferenceKey.self, value: itemView)
+            case .secondary:
+                root.preference(key: TopNavigationBarTrailingSecondaryPreferenceKey.self, value: itemView)
+            }
+        }
+    }
+}
+
+private struct TopNavigationBarPrincipalPreferenceWriter<Item: View>: ViewModifier {
+    let id: AnyHashable?
+    let updateKey: AnyHashable?
+    let content: () -> Item
+
+    @State private var fallbackID = AnyHashable(UUID())
+
+    private var resolvedID: AnyHashable { id ?? fallbackID }
+
+    func body(content root: Content) -> some View {
+        root.preference(
             key: TopNavigationBarPrincipalViewPreferenceKey.self,
-            value: TopNavigationPrincipalView(id: id?.hashValue, view: AnyView(content()))
+            value: TopNavigationPrincipalView(id: resolvedID, updateKey: updateKey, view: AnyView(content()))
         )
     }
 }
