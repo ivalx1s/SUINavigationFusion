@@ -10,8 +10,13 @@ extension View {
 }
 
 struct TopNavigationBarItemView: Equatable, View {
-    private let id: AnyHashable
-    private let updateKey: AnyHashable?
+    // `View` is main-actor-isolated in SwiftUI, but `onPreferenceChange` requires an `Equatable`
+    // value and performs equality checks from a nonisolated context.
+    //
+    // We treat these identity fields as immutable snapshots used purely for diffing, so it's safe
+    // to expose them as `nonisolated(unsafe)` for `==`.
+    nonisolated(unsafe) private let id: AnyHashable
+    nonisolated(unsafe) private let updateKey: AnyHashable?
     private let view: AnyView
     
     /// - Parameters:
@@ -33,8 +38,9 @@ struct TopNavigationBarItemView: Equatable, View {
 }
 
 struct TopNavigationPrincipalView: Equatable, View {
-    private let id: AnyHashable
-    private let updateKey: AnyHashable?
+    // See `TopNavigationBarItemView` for why these fields are `nonisolated(unsafe)`.
+    nonisolated(unsafe) private let id: AnyHashable
+    nonisolated(unsafe) private let updateKey: AnyHashable?
     private let view: AnyView
     
     /// - Parameters:
