@@ -105,21 +105,17 @@ struct TopNavigationBar: ViewModifier {
     }
     
     /// Handles scroll‑offset changes coming from `PositionObservingViewPreferenceKey`.
-    nonisolated private func processScrollOffset(_ offset: CGPoint) {
-        Task { @MainActor in
-            // If background opacity should not depend on scroll,
-            // keep background always visible and skip further calculations.
-            if !topNavigationBarConfiguration.scrollDependentBackgroundOpacity {
-                navigationBarOpaque = true
-                return
-            }
-            
-            let shouldBeOpaque = offset.y < -0.2
-            if shouldBeOpaque != navigationBarOpaque {
-                withAnimation(.linear(duration: 0.05)) {
-                    navigationBarOpaque = shouldBeOpaque
-                }
-            }
+    private func processScrollOffset(_ offset: CGPoint) {
+        // If background opacity should not depend on scroll,
+        // keep background always visible and skip further calculations.
+        if !topNavigationBarConfiguration.scrollDependentBackgroundOpacity {
+            navigationBarOpaque = true
+            return
+        }
+        
+        let shouldBeOpaque = offset.y < -0.2
+        if shouldBeOpaque != navigationBarOpaque {
+            navigationBarOpaque = shouldBeOpaque
         }
     }
 }
