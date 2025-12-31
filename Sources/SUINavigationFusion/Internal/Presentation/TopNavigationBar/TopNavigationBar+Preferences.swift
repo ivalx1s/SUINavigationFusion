@@ -34,6 +34,7 @@ struct TopNavigationBarItemView: Equatable, View {
     
     var body: some View {
         view
+            .topNavigationBarItemTapTarget()
     }
 }
 
@@ -58,6 +59,28 @@ struct TopNavigationPrincipalView: Equatable, View {
     
     var body: some View {
         view
+    }
+}
+
+// MARK: - Hit testing
+
+private let topNavigationBarItemTapTargetMinHeight: CGFloat = 44
+private let topNavigationBarItemTapTargetHorizontalPadding: CGFloat = 12
+
+private extension View {
+    /// Expands tappable area for bar items without changing layout.
+    ///
+    /// This solves two common issues for toolbar content:
+    /// 1) Small icons are hard to hit.
+    /// 2) Stroked shapes (e.g. `Circle().stroke(...)`) can be tappable only on the visible stroke.
+    ///
+    /// The implementation keeps the visual layout unchanged by applying a negative padding after
+    /// setting `contentShape`, while still using a rectangular hit target.
+    func topNavigationBarItemTapTarget() -> some View {
+        frame(minHeight: topNavigationBarItemTapTargetMinHeight)
+            .padding(.horizontal, topNavigationBarItemTapTargetHorizontalPadding)
+            .contentShape(Rectangle())
+            .padding(.horizontal, -topNavigationBarItemTapTargetHorizontalPadding)
     }
 }
 
