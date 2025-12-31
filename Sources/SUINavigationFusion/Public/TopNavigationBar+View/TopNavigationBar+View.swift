@@ -103,6 +103,23 @@ public extension View {
     ) -> some View {
         modifier(TopNavigationBarPrincipalPreferenceWriter(id: id, updateKey: updateKey, content: content))
     }
+
+    /// Overrides the tint (accent) color used by the top navigation bar items on this screen.
+    ///
+    /// This affects the back button and any leading/trailing content that relies on SwiftUI tinting.
+    /// Use this when you need per-screen tint because `NavigationShell` applies the bar *outside*
+    /// the screen’s subtree (so a regular `.tint(...)` on the screen does not reach the bar).
+    ///
+    /// - Parameter color:
+    ///   - `nil`: explicitly inherit tint from the surrounding SwiftUI environment (ignores configuration tint).
+    ///   - non-`nil`: force this tint color for the bar items on this screen.
+    @ViewBuilder
+    func topNavigationBarTintColor(_ color: Color?) -> some View {
+        preference(
+            key: TopNavigationBarTintPreferenceKey.self,
+            value: color.map(TopNavigationBarTintOverride.color) ?? .inherit
+        )
+    }
 }
 
 private enum TopNavigationBarItemPreference {

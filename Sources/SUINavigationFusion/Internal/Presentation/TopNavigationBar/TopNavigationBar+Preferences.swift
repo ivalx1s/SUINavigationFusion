@@ -84,6 +84,31 @@ private extension View {
     }
 }
 
+// MARK: - Tint override
+
+/// Per-screen tint override for the top navigation bar.
+///
+/// `TopNavigationBar` is applied by `NavigationShell` outside the screen’s view subtree, so a
+/// regular SwiftUI `.tint(...)` modifier on the screen will not affect the bar.
+///
+/// Use the public `topNavigationBarTintColor(_:)` API to pass the desired tint from the screen to
+/// the bar via a preference.
+enum TopNavigationBarTintOverride: Equatable {
+    /// Uses `TopNavigationBarConfiguration.tintColor` (default behavior).
+    case automatic
+    /// Ignores configuration and inherits tint from the surrounding SwiftUI environment.
+    case inherit
+    /// Forces a specific tint color for the bar items.
+    case color(Color)
+}
+
+struct TopNavigationBarTintPreferenceKey: PreferenceKey {
+    static let defaultValue: TopNavigationBarTintOverride = .automatic
+    static func reduce(value: inout TopNavigationBarTintOverride, nextValue: () -> TopNavigationBarTintOverride) {
+        value = nextValue()
+    }
+}
+
 // MARK: – Preference keys that bubble ↑
 struct TopNavigationBarTitlePreferenceKey: PreferenceKey {
     static let defaultValue: String? = nil

@@ -25,10 +25,21 @@ struct TopNavigationBar: ViewModifier {
     @State private var navigationBarOpaque = false
     
     @State private var visibility: [Section: TopNavigationBar.ComponentVisibility] = [:]
+
+    @State private var tintOverride: TopNavigationBarTintOverride = .automatic
     
     let isRoot: Bool
     
     func body(content: Content) -> some View {
+        let resolvedTint: Color? = switch tintOverride {
+        case .automatic:
+            topNavigationBarConfiguration.tintColor
+        case .inherit:
+            nil
+        case let .color(color):
+            color
+        }
+
         content
             .navigationBarHidden(true)
             .navigationBarTitle("", displayMode: .inline)
@@ -63,8 +74,11 @@ struct TopNavigationBar: ViewModifier {
                     scrollDependentBackgroundOpacity: topNavigationBarConfiguration.scrollDependentBackgroundOpacity,
                     dividerColor: topNavigationBarConfiguration.dividerColor
                 )
-                .tint(topNavigationBarConfiguration.tintColor)
-                .accentColor(topNavigationBarConfiguration.tintColor)
+                .applyIf(resolvedTint != nil) { view in
+                    view
+                        .tint(resolvedTint)
+                        .accentColor(resolvedTint)
+                }
             }
             .onPreferenceChange(TopNavigationBarTitlePreferenceKey.self) { title in
                 Task { @MainActor in self.title = title }
@@ -93,6 +107,9 @@ struct TopNavigationBar: ViewModifier {
             .onPreferenceChange(TopNavigationBarPrincipalViewPreferenceKey.self) { principalView in
                 Task { @MainActor in self.principalView = principalView }
             }
+            .onPreferenceChange(TopNavigationBarTintPreferenceKey.self) { tintOverride in
+                Task { @MainActor in self.tintOverride = tintOverride }
+            }
             .onPreferenceChange(
                 PositionObservingViewPreferenceKey.self,
                 perform: processScrollOffset
@@ -116,6 +133,17 @@ struct TopNavigationBar: ViewModifier {
         let shouldBeOpaque = offset.y < -0.2
         if shouldBeOpaque != navigationBarOpaque {
             navigationBarOpaque = shouldBeOpaque
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func applyIf<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
         }
     }
 }
