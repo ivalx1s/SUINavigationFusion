@@ -94,7 +94,7 @@ let config = TopNavigationBarConfiguration(
     titleFontWeight: .semibold,
     subtitleFontWeight: nil,
     titleStackSpacing: 2,
-    tintColor: .accentColor,                     // affects back icon & bar items
+    tintColor: nil,                              // nil → inherit SwiftUI tint (recommended default)
     backButtonIcon: .init(name: "custom_back", bundle: .main) // optional, defaults to chevron
 )
 ```
@@ -106,6 +106,28 @@ NavigationShell(configuration: config) { navigator in
     RootView()
 }
 ```
+
+## Tint (accent) color
+
+By default, SUINavigationFusion does not force a tint for the top bar: if `TopNavigationBarConfiguration.tintColor == nil`
+and you don’t set a per-screen override, bar items inherit the surrounding SwiftUI `.tint` (or the system default).
+
+If you set `TopNavigationBarConfiguration.tintColor`, it becomes the stack-wide default tint for the bar items.
+
+Per-screen override (takes precedence over configuration):
+
+```swift
+DetailsScreen()
+    .topNavigationBarTintColor(.orange) // force a tint on this screen
+
+DetailsScreen()
+    .topNavigationBarTintColor(nil)     // inherit SwiftUI tint and ignore configuration tint
+```
+
+Precedence: per-screen override → configuration `tintColor` → surrounding SwiftUI `.tint` / system.
+
+Note: since the bar is installed outside the screen subtree, a regular `.tint(...)` applied inside a screen does not reach
+the bar. Use `.topNavigationBarTintColor(...)` for per-screen control.
 
 ## Title & subtitle
 
