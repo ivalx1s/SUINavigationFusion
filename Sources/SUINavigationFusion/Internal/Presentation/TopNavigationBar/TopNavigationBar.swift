@@ -75,9 +75,14 @@ struct TopNavigationBar: ViewModifier {
                     scrollDependentBackgroundOpacity: topNavigationBarConfiguration.scrollDependentBackgroundOpacity,
                     dividerColor: topNavigationBarConfiguration.dividerColor
                 )
-                .tint(resolvedTint)
-                .accentColor(resolvedTint)
             }
+            // Apply the resolved tint to the whole screen subtree, not only the bar.
+            //
+            // This makes `TopNavigationBarConfiguration.tintColor` behave like a regular SwiftUI
+            // `.tint(...)` applied to the navigation stack, so standard controls (Buttons, Links,
+            // Toggles, etc.) and bar items stay in sync.
+            .tint(resolvedTint)
+            .accentColor(resolvedTint)
             .onPreferenceChange(TopNavigationBarTitlePreferenceKey.self) { title in
                 self.title = title
             }

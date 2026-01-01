@@ -50,7 +50,12 @@ public struct TopNavigationBarConfiguration: Sendable {
     /// Spacing applied between the title and subtitle labels.
     /// When `nil`, a default iOS‑like spacing is used (currently `2`).
     public let titleStackSpacing: CGFloat?
-    /// Tint (accent) color applied to navigation‑bar items (e.g. back button and bar buttons).
+    /// Tint (accent) color applied to the navigation stack.
+    ///
+    /// When non-`nil`, this value is applied as a SwiftUI `.tint(...)` for the entire hosted
+    /// view hierarchy (so Buttons, Links, Toggles, etc. inherit it), and is also used for top-bar
+    /// items (back button + leading/trailing content).
+    ///
     /// This does not affect the bar background (use `backgroundMaterial` / `backgroundColor`).
     ///
     /// Precedence (highest → lowest):
