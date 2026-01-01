@@ -121,47 +121,6 @@ public extension View {
     ) -> some View {
         modifier(TopNavigationBarPrincipalPreferenceWriter(id: id, updateKey: updateKey, content: content))
     }
-
-    /// Overrides the tint (accent) color used by the top navigation bar items on this screen.
-    ///
-    /// This affects the back button and any leading/trailing content that relies on SwiftUI tinting.
-    /// It does not change the bar background (configure that via `TopNavigationBarConfiguration`).
-    /// Use this when you need per-screen tint because `NavigationShell` applies the bar *outside*
-    /// the screen’s subtree (so a regular `.tint(...)` on the screen does not reach the bar).
-    ///
-    /// - Parameter color:
-    ///   - `nil`: explicitly inherit tint from the surrounding SwiftUI environment (ignores configuration tint).
-    ///   - non-`nil`: force this tint color for the bar items on this screen.
-    @ViewBuilder
-    func topNavigationBarTintColor(_ color: Color?) -> some View {
-        topNavigationBarTint(color.map(TopNavigationBarTint.color) ?? .inherit)
-    }
-
-    /// Sets how the top navigation bar resolves its tint (accent) color on this screen.
-    ///
-    /// Prefer this API when you need to *reset* a previously-set override back to `.automatic`
-    /// without removing modifiers or introducing conditional view branches.
-    @ViewBuilder
-    func topNavigationBarTint(_ tint: TopNavigationBarTint) -> some View {
-        let override: TopNavigationBarTintOverride = switch tint {
-        case .automatic:
-            .automatic
-        case .inherit:
-            .inherit
-        case let .color(color):
-            .color(color)
-        }
-        preference(key: TopNavigationBarTintPreferenceKey.self, value: override)
-    }
-}
-
-public enum TopNavigationBarTint: Equatable {
-    /// Uses `TopNavigationBarConfiguration.tintColor` (default behavior).
-    case automatic
-    /// Ignores configuration and inherits tint from the surrounding SwiftUI environment.
-    case inherit
-    /// Forces a specific tint color for the bar items.
-    case color(Color)
 }
 
 private enum TopNavigationBarItemPreference {

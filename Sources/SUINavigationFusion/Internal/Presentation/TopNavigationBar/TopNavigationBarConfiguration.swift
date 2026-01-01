@@ -54,9 +54,8 @@ public struct TopNavigationBarConfiguration: Sendable {
     /// This does not affect the bar background (use `backgroundMaterial` / `backgroundColor`).
     ///
     /// Precedence (highest → lowest):
-    /// 1. Per-screen `.topNavigationBarTintColor(...)` override.
-    /// 2. This `tintColor` value when non-`nil`.
-    /// 3. Surrounding SwiftUI environment tint (e.g. `.tint(...)` applied above `NavigationShell`)
+    /// 1. This `tintColor` value when non-`nil`.
+    /// 2. Surrounding SwiftUI environment tint (e.g. `.tint(...)` applied above `NavigationShell`)
     ///    or the system default when no tint is specified.
     public let tintColor: Color?
     /// Custom icon for the back‑button.

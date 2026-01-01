@@ -31,7 +31,7 @@ extension TopNavigationBar {
         /// This is passed explicitly (in addition to `.tint(...)`) because some SwiftUI view
         /// compositions (notably `AnyView` payloads and `overlay`) can fail to propagate tint changes
         /// to image-based button labels reliably. Applying the resolved color directly makes the
-        /// behavior deterministic for per-screen overrides.
+        /// behavior deterministic for runtime tint updates.
         let itemTintColor: Color
         
         let titleFont: Font?

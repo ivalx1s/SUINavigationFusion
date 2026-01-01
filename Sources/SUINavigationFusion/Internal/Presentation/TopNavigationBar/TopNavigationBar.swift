@@ -26,8 +26,6 @@ struct TopNavigationBar: ViewModifier {
     @State private var navigationBarOpaque = false
     
     @State private var visibility: [Section: TopNavigationBar.ComponentVisibility] = [:]
-
-    @State private var tintOverride: TopNavigationBarTintOverride = .automatic
     
     let isRoot: Bool
     
@@ -38,18 +36,9 @@ struct TopNavigationBar: ViewModifier {
         // In SwiftUI, changing the "shape" of the view tree (e.g. applying `.tint` only sometimes)
         // can reset state in surprising places (TabView selections, navigation stacks, etc.).
         //
-        // We always apply `.tint` using either:
-        // - the per-screen override (if provided),
-        // - the configuration tint (if provided),
-        // - or `Color.accentColor` as a dynamic "inherit from environment/system" fallback.
-        let resolvedTint: Color = switch tintOverride {
-        case .automatic:
-            topNavigationBarConfiguration.tintColor ?? .accentColor
-        case .inherit:
-            .accentColor
-        case let .color(color):
-            color
-        }
+        // We always apply `.tint` using either the configuration tint (when non-nil)
+        // or `Color.accentColor` as a dynamic "inherit from environment/system" fallback.
+        let resolvedTint: Color = topNavigationBarConfiguration.tintColor ?? .accentColor
 
         content
             .navigationBarHidden(true)
@@ -115,9 +104,6 @@ struct TopNavigationBar: ViewModifier {
             }
             .onPreferenceChange(TopNavigationBarPrincipalViewPreferenceKey.self) { principalView in
                 self.principalView = principalView
-            }
-            .onPreferenceChange(TopNavigationBarTintPreferenceKey.self) { tintOverride in
-                self.tintOverride = tintOverride
             }
             .onPreferenceChange(
                 PositionObservingViewPreferenceKey.self,
