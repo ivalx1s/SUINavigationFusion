@@ -110,15 +110,14 @@ NavigationShell(configuration: config) { navigator in
 ## Tint (accent) color
 
 By default, SUINavigationFusion does not force a tint: if `TopNavigationBarConfiguration.tintColor == nil`,
-the whole navigation stack inherits the surrounding SwiftUI `.tint` (or the system default).
+the navigation stack uses the system default tint.
 
 If you set `TopNavigationBarConfiguration.tintColor`, SUINavigationFusion applies it as a SwiftUI `.tint(...)` for the
 entire hosted view hierarchy and uses it for bar items (back button + leading/trailing content).
 
-Precedence: configuration `tintColor` → surrounding SwiftUI `.tint` / system.
+Precedence: configuration `tintColor` → system.
 
-Note: since the bar is installed outside the screen subtree, a regular `.tint(...)` applied inside a pushed screen does not
-reach the bar. Apply `.tint(...)` above `NavigationShell` or set `TopNavigationBarConfiguration.tintColor`.
+Note: since the bar is installed outside the screen subtree, per-screen tinting is intentionally not supported.
 The bar background is controlled separately via `TopNavigationBarConfiguration.backgroundMaterial` / `backgroundColor`.
 
 ## Title & subtitle
