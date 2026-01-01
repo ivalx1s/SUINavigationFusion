@@ -2,6 +2,7 @@ import SwiftUI
 
 
 // MARK: – Nav-bar modifier
+@MainActor
 struct TopNavigationBar: ViewModifier {
     @EnvironmentObject private var navigationPageTransitionProgress: NavigationPageTransitionProgress
     @EnvironmentObject private var navigator: Navigator
@@ -88,34 +89,34 @@ struct TopNavigationBar: ViewModifier {
                 .accentColor(resolvedTint)
             }
             .onPreferenceChange(TopNavigationBarTitlePreferenceKey.self) { title in
-                Task { @MainActor in self.title = title }
+                self.title = title
             }
             .onPreferenceChange(TopNavigationBarLeadingPreferenceKey.self)  { viewWrap in
-                Task { @MainActor in leadingView = viewWrap }
+                leadingView = viewWrap
             }
             .onPreferenceChange(TopNavigationBarTrailingPrimaryPreferenceKey.self) { viewWrap in
-                Task { @MainActor in trailingPrimaryView = viewWrap }
+                trailingPrimaryView = viewWrap
             }
             .onPreferenceChange(TopNavigationBarTrailingSecondaryPreferenceKey.self) { viewWrap in
-                Task { @MainActor in trailingSecondaryView = viewWrap }
+                trailingSecondaryView = viewWrap
             }
             .onPreferenceChange(TopNavigationBarHidesBackButtonPreferenceKey.self) { hides in
-                Task { @MainActor in hidesBackButton = hides  }
+                hidesBackButton = hides
             }
             .onPreferenceChange(TopNavigationBarSubtitlePreferenceKey.self) { subtitle in
-                Task { @MainActor in self.subtitle = subtitle }
+                self.subtitle = subtitle
             }
             .onPreferenceChange(TopNavigationBarSubtitleTextPreferenceKey.self) { subtitleText in
-                Task { @MainActor in self.currentSubtitleText = subtitleText  }
+                self.currentSubtitleText = subtitleText
             }
             .onPreferenceChange(TopNavigationBarTitleTextPreferenceKey.self) { titleTextView in
-                Task { @MainActor in self.titleTextView = titleTextView }
+                self.titleTextView = titleTextView
             }
             .onPreferenceChange(TopNavigationBarPrincipalViewPreferenceKey.self) { principalView in
-                Task { @MainActor in self.principalView = principalView }
+                self.principalView = principalView
             }
             .onPreferenceChange(TopNavigationBarTintPreferenceKey.self) { tintOverride in
-                Task { @MainActor in self.tintOverride = tintOverride }
+                self.tintOverride = tintOverride
             }
             .onPreferenceChange(
                 PositionObservingViewPreferenceKey.self,
@@ -123,7 +124,7 @@ struct TopNavigationBar: ViewModifier {
             )
             .onPreferenceChange(TopNavigationBarVisibilityPreferenceKey.self) { visibility in
                 if let visibility {
-                    Task { @MainActor in self.visibility = visibility }
+                    self.visibility = visibility
                 }
             }
     }
