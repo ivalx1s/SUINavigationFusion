@@ -188,6 +188,7 @@ extension TopNavigationBar.TopBar {
                                         .renderingMode(.template)
                                         .font(.title2.weight(.medium))
                                 }
+                                .foregroundStyle(.tint)
                                 .opacity(opacity)
                         }
                     } else {
@@ -199,6 +200,7 @@ extension TopNavigationBar.TopBar {
                                     Image(systemName: "chevron.backward")
                                         .font(.title2.weight(.medium))
                                 }
+                                .foregroundStyle(.tint)
                                 .opacity(opacity)
                         }
                     }
@@ -299,7 +301,13 @@ extension TopNavigationBar.TopBar {
         
         var body: some View {
             leading
-                .equatable()
+                // Bar items should behave like native `UINavigationBar` buttons.
+                // `PlainButtonStyle` keeps the label’s default foreground (often `.primary`),
+                // so applying `.foregroundStyle(.tint)` ensures common toolbar content
+                // (SF Symbols / Text) inherits the current tint.
+                .foregroundStyle(.tint)
+                // Note: avoid `.equatable()` here so environment-driven style changes
+                // (tint, Dynamic Type, etc.) propagate correctly.
             // Если рядом есть back — небольшой зазор 4pt между back и leading.
                 .padding(.leading, hasBackButton ? 4 : 0)
                 .opacity(opacity)
@@ -320,7 +328,8 @@ extension TopNavigationBar.TopBar {
         
         var body: some View {
             trailingSecondaryView
-                .equatable()
+                .foregroundStyle(.tint)
+                // See `LeadingItem` for why we avoid `.equatable()` here.
                 .opacity(opacity)
                 .fixedSize(horizontal: true, vertical: false)
         }
@@ -339,7 +348,8 @@ extension TopNavigationBar.TopBar {
         
         var body: some View {
             trailing
-                .equatable()
+                .foregroundStyle(.tint)
+                // See `LeadingItem` for why we avoid `.equatable()` here.
             // Без доп. трэйлинга — дистанцию до края контролирует rightInset контейнера.
                 .opacity(opacity)
                 .fixedSize(horizontal: true, vertical: false)

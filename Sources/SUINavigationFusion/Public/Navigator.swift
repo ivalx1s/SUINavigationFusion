@@ -33,7 +33,9 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     public let resolveNavigationController: () -> NCUINavigationController?
     
     var navigationPageTransitionProgress: NavigationPageTransitionProgress?
-    var topNavigationBarConfiguration: TopNavigationBarConfiguration?
+    /// Shared top-bar configuration for this navigation stack.
+    /// Updated by `NavigationShell` and injected into every hosted screen.
+    let topNavigationBarConfigurationStore = TopNavigationBarConfigurationStore()
     
     // MARK: - Equatable
     
@@ -107,12 +109,11 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///     immediate push.
     public func push<V: View>(_ view: V, animated: Bool = true, disableBackGesture: Bool = false) {
         guard let navigationController = currentNavigationController() else { return }
-        guard let navigatorConfiguration = topNavigationBarConfiguration else { return }
         let progress = NavigationPageTransitionProgress()
         let content  = Color.clear.overlay(content: { view })
             .topNavigationBar(isRoot: false)
             .environmentObject(progress)
-            .topNavigationBarConfiguration(navigatorConfiguration)
+            .environmentObject(topNavigationBarConfigurationStore)
             .environmentObject(self)
         let hosting = NavigationShellHostingController(
             rootView: content,

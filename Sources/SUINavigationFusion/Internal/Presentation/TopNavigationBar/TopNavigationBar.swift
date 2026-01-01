@@ -6,7 +6,7 @@ struct TopNavigationBar: ViewModifier {
     @EnvironmentObject private var navigationPageTransitionProgress: NavigationPageTransitionProgress
     @EnvironmentObject private var navigator: Navigator
     
-    @Environment(\.topNavigationBarConfiguration) private var topNavigationBarConfiguration
+    @EnvironmentObject private var configurationStore: TopNavigationBarConfigurationStore
     
     // Latest values coming from child views
     @State private var title: String?  = nil
@@ -31,6 +31,8 @@ struct TopNavigationBar: ViewModifier {
     let isRoot: Bool
     
     func body(content: Content) -> some View {
+        let topNavigationBarConfiguration = configurationStore.configuration
+
         let resolvedTint: Color? = switch tintOverride {
         case .automatic:
             topNavigationBarConfiguration.tintColor
@@ -123,6 +125,8 @@ struct TopNavigationBar: ViewModifier {
     
     /// Handles scroll‑offset changes coming from `PositionObservingViewPreferenceKey`.
     private func processScrollOffset(_ offset: CGPoint) {
+        let topNavigationBarConfiguration = configurationStore.configuration
+
         // If background opacity should not depend on scroll,
         // keep background always visible and skip further calculations.
         if !topNavigationBarConfiguration.scrollDependentBackgroundOpacity {

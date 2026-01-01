@@ -20,9 +20,9 @@ import Combine
  service, so application code never has to talk to UIKit directly.
  
  ### Responsibilities
- 1. **Environment injection** – Writes the chosen
- `TopNavigationBarConfiguration` into the SwiftUI environment, ensuring
- every `TopNavigationBar` created in this stack shares the same style.
+ 1. **Environment injection** – Injects a shared `TopNavigationBarConfigurationStore`
+ into the SwiftUI environment, ensuring every `TopNavigationBar` created in this
+ stack shares the same style and can react to runtime configuration updates.
  2. **Root view hosting** – Wraps the caller‑supplied `Root` view in a
  `UIHostingController`, hides the system navigation bar, and installs the
  custom bar via the `.topNavigationBar(isRoot:)` modifier.
@@ -45,12 +45,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
      The style configuration that will be applied to every *top navigation bar*
      within the navigation stack created by this `Navigation` representable.
      
-     This `Navigation` representable injects the value into the SwiftUI
-     environment using the `topNavigationBarConfiguration` key as soon as it
-     creates the root navigation bar, making the value accessible within the TopNavigationBar instance.
-     Every additional bar that the library instantiates while pushing new views
-     automatically reads the same configuration (passed through Navigator instance), so you never have to pass the
-     value manually.
+     This representable updates a shared `TopNavigationBarConfigurationStore` on
+     the `Navigator` and injects it into every hosted screen. As a result:
+     - The top bar reads configuration from a single source of truth.
+     - Updating `NavigationShell(configuration:)` at runtime updates the top bar
+       for the currently visible screen as well as any pushed screens.
      */
     private let configuration: TopNavigationBarConfiguration
     
@@ -233,7 +232,6 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
     ) -> NavigationShellHostingController<DecoratedRoot<Root>> {
         let decoratedRoot = DecoratedRoot(
             content: rootBuilder(navigator),
-            configuration: configuration,
             progress: progress,
             navigator: navigator
         )
@@ -256,7 +254,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             context.coordinator.injectedNavigator = externalNavigator
 
             externalNavigator.navigationPageTransitionProgress = transitionProgress
-            externalNavigator.topNavigationBarConfiguration = configuration
+            externalNavigator.topNavigationBarConfigurationStore.configuration = configuration
             let rootController = makeRootViewController(
                 for: externalNavigator,
                 progress: transitionProgress
@@ -276,7 +274,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             context.coordinator.injectedNavigator = autoInjectedNavigator
 
             autoInjectedNavigator.navigationPageTransitionProgress = transitionProgress
-            autoInjectedNavigator.topNavigationBarConfiguration = configuration
+            autoInjectedNavigator.topNavigationBarConfigurationStore.configuration = configuration
             let rootController = makeRootViewController(
                 for: autoInjectedNavigator,
                 progress: transitionProgress
@@ -297,11 +295,10 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 
         let progress = context.coordinator.progress
         navigator.navigationPageTransitionProgress = progress
-        navigator.topNavigationBarConfiguration = configuration
+        navigator.topNavigationBarConfigurationStore.configuration = configuration
 
         let updatedRoot = DecoratedRoot(
             content: rootBuilder(navigator),
-            configuration: configuration,
             progress: progress,
             navigator: navigator
         )
@@ -326,15 +323,14 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 @MainActor
 private struct DecoratedRoot<Content: View>: View {
     let content: Content
-    let configuration: TopNavigationBarConfiguration
     let progress: NavigationPageTransitionProgress
     let navigator: Navigator
 
     var body: some View {
         content
             .topNavigationBar(isRoot: true)
-            .topNavigationBarConfiguration(configuration)
             .environmentObject(progress)
             .environmentObject(navigator)
+            .environmentObject(navigator.topNavigationBarConfigurationStore)
     }
 }
