@@ -125,6 +125,7 @@ public extension View {
     /// Overrides the tint (accent) color used by the top navigation bar items on this screen.
     ///
     /// This affects the back button and any leading/trailing content that relies on SwiftUI tinting.
+    /// It does not change the bar background (configure that via `TopNavigationBarConfiguration`).
     /// Use this when you need per-screen tint because `NavigationShell` applies the bar *outside*
     /// the screen’s subtree (so a regular `.tint(...)` on the screen does not reach the bar).
     ///

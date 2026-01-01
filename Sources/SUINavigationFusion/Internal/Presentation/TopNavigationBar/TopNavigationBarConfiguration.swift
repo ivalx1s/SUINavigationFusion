@@ -51,6 +51,7 @@ public struct TopNavigationBarConfiguration: Sendable {
     /// When `nil`, a default iOS‑like spacing is used (currently `2`).
     public let titleStackSpacing: CGFloat?
     /// Tint (accent) color applied to navigation‑bar items (e.g. back button and bar buttons).
+    /// This does not affect the bar background (use `backgroundMaterial` / `backgroundColor`).
     ///
     /// Precedence (highest → lowest):
     /// 1. Per-screen `.topNavigationBarTintColor(...)` override.

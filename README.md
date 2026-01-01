@@ -129,6 +129,10 @@ Precedence: per-screen override → configuration `tintColor` → surrounding Sw
 Note: since the bar is installed outside the screen subtree, a regular `.tint(...)` applied inside a screen does not reach
 the bar. Use `.topNavigationBarTintColor(...)` for per-screen control.
 
+Also note: tint affects bar items only (back button + leading/trailing content). The bar background is controlled
+separately via `TopNavigationBarConfiguration.backgroundMaterial` / `backgroundColor`. If you want the background to
+follow the resolved tint, set `backgroundColor: .accentColor` (a dynamic color that tracks the current environment tint).
+
 ## Title & subtitle
 
 Use plain strings: .topNavigationBarTitle("Title"), .topNavigationBarSubtitle("Subtitle") or provide fully styled Text (overrides config fonts/colors):
