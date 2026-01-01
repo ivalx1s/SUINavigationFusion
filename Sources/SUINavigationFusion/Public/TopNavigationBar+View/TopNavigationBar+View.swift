@@ -8,6 +8,15 @@ public extension View {
         preference(key: TopNavigationBarTitlePreferenceKey.self, value: title)
     }
     
+    /// Sets or clears a plain‑string title for the top navigation bar.
+    ///
+    /// Use this overload when the title can change dynamically and needs to be removed
+    /// (set to `nil`) without changing the view tree shape.
+    @ViewBuilder
+    func topNavigationBarTitle(_ title: String?) -> some View {
+        preference(key: TopNavigationBarTitlePreferenceKey.self, value: title)
+    }
+
     /// Sets a fully formatted `Text` view as the title.
     /// Use this when you need multiline or richly styled titles.
     ///
@@ -27,6 +36,15 @@ public extension View {
         preference(key: TopNavigationBarSubtitlePreferenceKey.self, value: title)
     }
     
+    /// Sets or clears a secondary (subtitle) line beneath the title.
+    ///
+    /// Use this overload when the subtitle can change dynamically and needs to be removed
+    /// (set to `nil`) without changing the view tree shape.
+    @ViewBuilder
+    func topNavigationBarSubtitle(_ title: String?) -> some View {
+        preference(key: TopNavigationBarSubtitlePreferenceKey.self, value: title)
+    }
+
     /// Sets a fully styled `Text` view as the subtitle.
     /// Any font or color modifiers applied to the `Text`
     /// override `subtitleFont`, `subtitleFontWeight`, and `subtitleFontColor`
@@ -115,11 +133,34 @@ public extension View {
     ///   - non-`nil`: force this tint color for the bar items on this screen.
     @ViewBuilder
     func topNavigationBarTintColor(_ color: Color?) -> some View {
-        preference(
-            key: TopNavigationBarTintPreferenceKey.self,
-            value: color.map(TopNavigationBarTintOverride.color) ?? .inherit
-        )
+        topNavigationBarTint(color.map(TopNavigationBarTint.color) ?? .inherit)
     }
+
+    /// Sets how the top navigation bar resolves its tint (accent) color on this screen.
+    ///
+    /// Prefer this API when you need to *reset* a previously-set override back to `.automatic`
+    /// without removing modifiers or introducing conditional view branches.
+    @ViewBuilder
+    func topNavigationBarTint(_ tint: TopNavigationBarTint) -> some View {
+        let override: TopNavigationBarTintOverride = switch tint {
+        case .automatic:
+            .automatic
+        case .inherit:
+            .inherit
+        case let .color(color):
+            .color(color)
+        }
+        preference(key: TopNavigationBarTintPreferenceKey.self, value: override)
+    }
+}
+
+public enum TopNavigationBarTint: Equatable {
+    /// Uses `TopNavigationBarConfiguration.tintColor` (default behavior).
+    case automatic
+    /// Ignores configuration and inherits tint from the surrounding SwiftUI environment.
+    case inherit
+    /// Forces a specific tint color for the bar items.
+    case color(Color)
 }
 
 private enum TopNavigationBarItemPreference {

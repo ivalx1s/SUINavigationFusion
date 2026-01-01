@@ -34,6 +34,11 @@ struct TopNavigationBarItemView: Equatable, View {
     
     var body: some View {
         view
+            // Bar items should behave like native `UINavigationBar` buttons.
+            // `PlainButtonStyle` keeps the label’s default foreground (often `.primary`), so we
+            // provide a `.tint`-backed foreground style by default. Callers can still override
+            // colors inside their custom content when needed.
+            .foregroundStyle(.tint)
             .topNavigationBarItemTapTarget()
     }
 }

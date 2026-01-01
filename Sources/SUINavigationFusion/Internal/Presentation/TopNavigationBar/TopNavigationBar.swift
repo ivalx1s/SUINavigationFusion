@@ -33,11 +33,19 @@ struct TopNavigationBar: ViewModifier {
     func body(content: Content) -> some View {
         let topNavigationBarConfiguration = configurationStore.configuration
 
-        let resolvedTint: Color? = switch tintOverride {
+        // NOTE: Avoid conditional view branching for tint application.
+        // In SwiftUI, changing the "shape" of the view tree (e.g. applying `.tint` only sometimes)
+        // can reset state in surprising places (TabView selections, navigation stacks, etc.).
+        //
+        // We always apply `.tint` using either:
+        // - the per-screen override (if provided),
+        // - the configuration tint (if provided),
+        // - or `Color.accentColor` as a dynamic "inherit from environment/system" fallback.
+        let resolvedTint: Color = switch tintOverride {
         case .automatic:
-            topNavigationBarConfiguration.tintColor
+            topNavigationBarConfiguration.tintColor ?? .accentColor
         case .inherit:
-            nil
+            .accentColor
         case let .color(color):
             color
         }
@@ -76,11 +84,8 @@ struct TopNavigationBar: ViewModifier {
                     scrollDependentBackgroundOpacity: topNavigationBarConfiguration.scrollDependentBackgroundOpacity,
                     dividerColor: topNavigationBarConfiguration.dividerColor
                 )
-                .applyIf(resolvedTint != nil) { view in
-                    view
-                        .tint(resolvedTint)
-                        .accentColor(resolvedTint)
-                }
+                .tint(resolvedTint)
+                .accentColor(resolvedTint)
             }
             .onPreferenceChange(TopNavigationBarTitlePreferenceKey.self) { title in
                 Task { @MainActor in self.title = title }
@@ -137,17 +142,6 @@ struct TopNavigationBar: ViewModifier {
         let shouldBeOpaque = offset.y < -0.2
         if shouldBeOpaque != navigationBarOpaque {
             navigationBarOpaque = shouldBeOpaque
-        }
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func applyIf<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
         }
     }
 }
