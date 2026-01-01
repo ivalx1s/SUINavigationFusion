@@ -25,6 +25,14 @@ extension TopNavigationBar {
         let pageTransitionProgress: Double
         let onBack: @MainActor () -> Void
         let backButtonIcon: TopNavigationBarConfiguration.BackButtonIconResource?
+
+        /// Resolved tint color for bar items (back button, leading/trailing content).
+        ///
+        /// This is passed explicitly (in addition to `.tint(...)`) because some SwiftUI view
+        /// compositions (notably `AnyView` payloads and `overlay`) can fail to propagate tint changes
+        /// to image-based button labels reliably. Applying the resolved color directly makes the
+        /// behavior deterministic for per-screen overrides.
+        let itemTintColor: Color
         
         let titleFont: Font?
         let titleFontWeight: Font.Weight?
@@ -95,7 +103,8 @@ extension TopNavigationBar {
                         onBack: onBack,
                         backButtonIcon: backButtonIcon,
                         leadingView: leadingView,
-                        isLeadingViewVisible: visibility[.leading] != .hidden
+                        isLeadingViewVisible: visibility[.leading] != .hidden,
+                        itemTintColor: itemTintColor
                     )
                     .background(WidthReader(key: LeftWidthKey.self))   // измеряем ширину слева
                     
@@ -105,7 +114,8 @@ extension TopNavigationBar {
                         progress: pageTransitionProgress,
                         trailingPrimaryView: trailingPrimaryView,
                         trailingSecondaryView: trailingSecondaryView,
-                        visibility: visibility
+                        visibility: visibility,
+                        itemTintColor: itemTintColor
                     )
                     .background(WidthReader(key: RightWidthKey.self))  // измеряем ширину справа
                 }
@@ -166,10 +176,11 @@ extension TopNavigationBar.TopBar {
         let transitionProgressFraction: Double
         let onBack: () -> Void
         let backButtonIcon: TopNavigationBarConfiguration.BackButtonIconResource?
+        let itemTintColor: Color
         
         private var opacity: Double {
             // TODO: PMA-17561
-//            max(0, 1 - min(transitionProgressFraction / max(0.001, titleProgressThreshold), 1))
+            // max(0, 1 - min(transitionProgressFraction / max(0.001, titleProgressThreshold), 1))
             1
         }
         
@@ -187,8 +198,9 @@ extension TopNavigationBar.TopBar {
                                     backIcon(for: icon)
                                         .renderingMode(.template)
                                         .font(.title2.weight(.medium))
+                                        .foregroundStyle(itemTintColor)
+                                        .foregroundColor(itemTintColor)
                                 }
-                                .foregroundStyle(.tint)
                                 .opacity(opacity)
                         }
                     } else {
@@ -199,8 +211,9 @@ extension TopNavigationBar.TopBar {
                                 .overlay(alignment: .leading) {
                                     Image(systemName: "chevron.backward")
                                         .font(.title2.weight(.medium))
+                                        .foregroundStyle(itemTintColor)
+                                        .foregroundColor(itemTintColor)
                                 }
-                                .foregroundStyle(.tint)
                                 .opacity(opacity)
                         }
                     }
@@ -208,7 +221,7 @@ extension TopNavigationBar.TopBar {
             }
             .fixedSize(horizontal: true, vertical: false)
         }
-
+        
         private func backIcon(for icon: TopNavigationBarConfiguration.BackButtonIconResource) -> Image {
 #if canImport(UIKit)
             if let uiImage = UIImage(named: icon.name, in: icon.bundle, compatibleWith: nil) {
@@ -230,6 +243,7 @@ extension TopNavigationBar.TopBar {
         let backButtonIcon: TopNavigationBarConfiguration.BackButtonIconResource?
         let leadingView: TopNavigationBarItem?
         let isLeadingViewVisible: Bool
+        let itemTintColor: Color
         
         private var showsBack: Bool {
             (!isRoot) && ((hidesBackButton ?? false) == false)
@@ -242,14 +256,16 @@ extension TopNavigationBar.TopBar {
                     hidesBackButton: hidesBackButton,
                     transitionProgressFraction: progress,
                     onBack: onBack,
-                    backButtonIcon: backButtonIcon
+                    backButtonIcon: backButtonIcon,
+                    itemTintColor: itemTintColor
                 )
                 
                 if isLeadingViewVisible, let leadingView {
                     LeadingItem(
                         leading: leadingView,
                         pageTransitionProgress: progress,
-                        hasBackButton: showsBack
+                        hasBackButton: showsBack,
+                        itemTintColor: itemTintColor
                     )
                 }
             }
@@ -263,6 +279,7 @@ extension TopNavigationBar.TopBar {
         let trailingPrimaryView: TopNavigationBarItem?
         let trailingSecondaryView: TopNavigationBarItem?
         let visibility: [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]
+        let itemTintColor: Color
         
         var body: some View {
             HStack(spacing: 16) {
@@ -273,14 +290,19 @@ extension TopNavigationBar.TopBar {
                    let trailingSecondaryView {
                     TrailingSecondary(
                         trailingSecondaryView: trailingSecondaryView,
-                        progress: progress
+                        progress: progress,
+                        itemTintColor: itemTintColor
                     )
                 }
                 
                 if !hideAllTrailing,
                    visibility[.trailingPosition(.primary)] != .hidden,
                    let trailingPrimaryView {
-                    TrailingPrimary(trailing: trailingPrimaryView, pageTransitionProgress: progress)
+                    TrailingPrimary(
+                        trailing: trailingPrimaryView,
+                        pageTransitionProgress: progress,
+                        itemTintColor: itemTintColor
+                    )
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
@@ -292,16 +314,17 @@ extension TopNavigationBar.TopBar {
         let leading: TopNavigationBarItem
         let pageTransitionProgress: Double
         let hasBackButton: Bool
+        let itemTintColor: Color
         
         private var opacity: Double {
             // TODO: PMA-17561
-//            max(0, 1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1))
+            // max(0, 1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1))
             1
         }
         
         var body: some View {
-            TopNavigationBarItemContent(item: leading)
-            // Если рядом есть back — небольшой зазор 4pt между back и leading.
+            TopNavigationBarItemContent(item: leading, itemTintColor: itemTintColor)
+                // Если рядом есть back — небольшой зазор 4pt между back и leading.
                 .padding(.leading, hasBackButton ? 4 : 0)
                 .opacity(opacity)
                 .fixedSize(horizontal: true, vertical: false)
@@ -312,15 +335,16 @@ extension TopNavigationBar.TopBar {
     struct TrailingSecondary: View {
         let trailingSecondaryView: TopNavigationBarItem
         let progress: Double
+        let itemTintColor: Color
         
         private var opacity: Double {
             // TODO: PMA-17561
-//            max(0, 1 - min(Double(progress) / max(0.001, titleProgressThreshold), 1))
+            // max(0, 1 - min(Double(progress) / max(0.001, titleProgressThreshold), 1))
             1
         }
         
         var body: some View {
-            TopNavigationBarItemContent(item: trailingSecondaryView)
+            TopNavigationBarItemContent(item: trailingSecondaryView, itemTintColor: itemTintColor)
                 .opacity(opacity)
                 .fixedSize(horizontal: true, vertical: false)
         }
@@ -330,16 +354,17 @@ extension TopNavigationBar.TopBar {
     struct TrailingPrimary: View {
         let trailing: TopNavigationBarItem
         let pageTransitionProgress: Double
+        let itemTintColor: Color
         
         private var opacity: Double {
             // TODO: PMA-17561
-//            max(0, 1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1))
+            // max(0, 1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1))
             1
         }
         
         var body: some View {
-            TopNavigationBarItemContent(item: trailing)
-            // Без доп. трэйлинга — дистанцию до края контролирует rightInset контейнера.
+            TopNavigationBarItemContent(item: trailing, itemTintColor: itemTintColor)
+                // Без доп. трэйлинга — дистанцию до края контролирует rightInset контейнера.
                 .opacity(opacity)
                 .fixedSize(horizontal: true, vertical: false)
         }

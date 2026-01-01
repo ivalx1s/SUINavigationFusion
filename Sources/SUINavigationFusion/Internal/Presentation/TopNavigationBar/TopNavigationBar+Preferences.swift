@@ -59,13 +59,20 @@ struct TopNavigationBarPrincipal: Equatable {
 /// environment-driven updates (like changing tint) from reaching bar button content.
 struct TopNavigationBarItemContent: View {
     let item: TopNavigationBarItem
+    let itemTintColor: Color
 
     var body: some View {
         item.view
             // Bar items should behave like native `UINavigationBar` buttons.
-            // We provide a `.tint`-backed foreground style by default. Callers can still override
-            // colors inside their custom content when needed.
-            .foregroundStyle(.tint)
+            //
+            // We apply the *resolved* tint color directly instead of relying solely on `.tint(...)`
+            // propagation. This is more reliable for type-erased `AnyView` payloads and complex
+            // compositions where environment updates (like per-screen tint overrides) may not
+            // reach image-based labels deterministically.
+            //
+            // Callers can still override colors inside their custom content when needed.
+            .foregroundStyle(itemTintColor)
+            .foregroundColor(itemTintColor)
             .topNavigationBarItemTapTarget()
     }
 }

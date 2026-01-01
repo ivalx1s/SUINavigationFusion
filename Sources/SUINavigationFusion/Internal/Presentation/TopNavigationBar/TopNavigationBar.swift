@@ -74,6 +74,7 @@ struct TopNavigationBar: ViewModifier {
                     pageTransitionProgress: navigationPageTransitionProgress.progress,
                     onBack: navigator.pop,
                     backButtonIcon: topNavigationBarConfiguration.backButtonIcon,
+                    itemTintColor: resolvedTint,
                     titleFont: topNavigationBarConfiguration.titleFont,
                     titleFontWeight: topNavigationBarConfiguration.titleFontWeight,
                     titleFontColor: topNavigationBarConfiguration.titleFontColor,
