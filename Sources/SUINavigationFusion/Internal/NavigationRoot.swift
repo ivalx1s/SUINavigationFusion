@@ -254,7 +254,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             context.coordinator.injectedNavigator = externalNavigator
 
             externalNavigator.navigationPageTransitionProgress = transitionProgress
-            externalNavigator.topNavigationBarConfigurationStore.configuration = configuration
+            externalNavigator.topNavigationBarConfigurationStore.setConfiguration(configuration)
             let rootController = makeRootViewController(
                 for: externalNavigator,
                 progress: transitionProgress
@@ -274,7 +274,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             context.coordinator.injectedNavigator = autoInjectedNavigator
 
             autoInjectedNavigator.navigationPageTransitionProgress = transitionProgress
-            autoInjectedNavigator.topNavigationBarConfigurationStore.configuration = configuration
+            autoInjectedNavigator.topNavigationBarConfigurationStore.setConfiguration(configuration)
             let rootController = makeRootViewController(
                 for: autoInjectedNavigator,
                 progress: transitionProgress
@@ -295,7 +295,17 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 
         let progress = context.coordinator.progress
         navigator.navigationPageTransitionProgress = progress
-        navigator.topNavigationBarConfigurationStore.configuration = configuration
+        // NOTE:
+        // `TopNavigationBarConfigurationStore` is an `ObservableObject` (via `@Published configuration`).
+        // Publishing changes synchronously from inside `updateUIViewController` triggers:
+        // "Publishing changes from within view updates is not allowed, this will cause undefined behavior."
+        //
+        // Defer the publish to the next run loop tick to keep SwiftUI's update cycle stable.
+        let updatedConfiguration = configuration
+        Task { @MainActor in
+            await Task.yield()
+            navigator.topNavigationBarConfigurationStore.setConfiguration(updatedConfiguration)
+        }
 
         let updatedRoot = DecoratedRoot(
             content: rootBuilder(navigator),
