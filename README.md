@@ -130,8 +130,7 @@ Note: since the bar is installed outside the screen subtree, a regular `.tint(..
 the bar. Use `.topNavigationBarTintColor(...)` for per-screen control.
 
 Also note: tint affects bar items only (back button + leading/trailing content). The bar background is controlled
-separately via `TopNavigationBarConfiguration.backgroundMaterial` / `backgroundColor`. If you want the background to
-follow the resolved tint, set `backgroundColor: .accentColor` (a dynamic color that tracks the current environment tint).
+separately via `TopNavigationBarConfiguration.backgroundMaterial` / `backgroundColor`.
 
 ## Title & subtitle
 

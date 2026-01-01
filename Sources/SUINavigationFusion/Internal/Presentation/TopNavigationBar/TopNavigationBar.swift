@@ -12,15 +12,15 @@ struct TopNavigationBar: ViewModifier {
     // Latest values coming from child views
     @State private var title: String?  = nil
     @State private var subtitle: String?  = nil
-    @State private var leadingView: TopNavigationBarItemView? = nil
-    @State private var trailingPrimaryView: TopNavigationBarItemView? = nil
-    @State private var trailingSecondaryView: TopNavigationBarItemView? = nil
+    @State private var leadingView: TopNavigationBarItem? = nil
+    @State private var trailingPrimaryView: TopNavigationBarItem? = nil
+    @State private var trailingSecondaryView: TopNavigationBarItem? = nil
     @State private var hidesBackButton: Bool? = false
     
     @State private var titleTextView: Text? = nil
     @State private var currentSubtitleText: Text? = nil
     
-    @State private var principalView: TopNavigationPrincipalView? = nil
+    @State private var principalView: TopNavigationBarPrincipal? = nil
     
     /// `true` when the scroll-view’s content has moved under the bar
     @State private var navigationBarOpaque = false

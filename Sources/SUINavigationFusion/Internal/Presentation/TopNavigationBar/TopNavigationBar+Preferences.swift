@@ -9,61 +9,64 @@ extension View {
     }
 }
 
-struct TopNavigationBarItemView: Equatable, View {
-    // `View` is main-actor-isolated in SwiftUI, but `onPreferenceChange` requires an `Equatable`
-    // value and performs equality checks from a nonisolated context.
-    //
-    // We treat these identity fields as immutable snapshots used purely for diffing, so it's safe
-    // to expose them as `nonisolated(unsafe)` for `==`.
+// MARK: - Bar item models (PreferenceKey payloads)
+
+/// An equatable snapshot of a bar item.
+///
+/// Important:
+/// `onPreferenceChange` requires an `Equatable` payload and SwiftUI may perform equality checks
+/// from a nonisolated context. We compare identity fields only and treat the view payload as an
+/// opaque value used exclusively for rendering on the main actor.
+struct TopNavigationBarItem: Equatable {
     nonisolated(unsafe) private let id: AnyHashable
     nonisolated(unsafe) private let updateKey: AnyHashable?
-    private let view: AnyView
-    
-    /// - Parameters:
-    ///   - id: Stable identity for diffing and update coalescing.
-    ///   - updateKey: Use this to force an update when `id` stays the same but the rendered content changes.
+    let view: AnyView
+
     init(id: AnyHashable, updateKey: AnyHashable? = nil, view: AnyView) {
         self.id = id
         self.updateKey = updateKey
         self.view = view
     }
-    
-    nonisolated static func == (lhs: TopNavigationBarItemView, rhs: TopNavigationBarItemView) -> Bool {
+
+    nonisolated static func == (lhs: TopNavigationBarItem, rhs: TopNavigationBarItem) -> Bool {
         lhs.id == rhs.id && lhs.updateKey == rhs.updateKey
-    }
-    
-    var body: some View {
-        view
-            // Bar items should behave like native `UINavigationBar` buttons.
-            // `PlainButtonStyle` keeps the label’s default foreground (often `.primary`), so we
-            // provide a `.tint`-backed foreground style by default. Callers can still override
-            // colors inside their custom content when needed.
-            .foregroundStyle(.tint)
-            .topNavigationBarItemTapTarget()
     }
 }
 
-struct TopNavigationPrincipalView: Equatable, View {
-    // See `TopNavigationBarItemView` for why these fields are `nonisolated(unsafe)`.
+/// An equatable snapshot of the principal (center) bar content.
+struct TopNavigationBarPrincipal: Equatable {
     nonisolated(unsafe) private let id: AnyHashable
     nonisolated(unsafe) private let updateKey: AnyHashable?
-    private let view: AnyView
-    
-    /// - Parameters:
-    ///   - id: Stable identity for diffing and update coalescing.
-    ///   - updateKey: Use this to force an update when `id` stays the same but the rendered content changes.
+    let view: AnyView
+
     init(id: AnyHashable, updateKey: AnyHashable? = nil, view: AnyView) {
         self.id = id
         self.updateKey = updateKey
         self.view = view
     }
-    
-    nonisolated static func == (lhs: TopNavigationPrincipalView, rhs: TopNavigationPrincipalView) -> Bool {
+
+    nonisolated static func == (lhs: TopNavigationBarPrincipal, rhs: TopNavigationBarPrincipal) -> Bool {
         lhs.id == rhs.id && lhs.updateKey == rhs.updateKey
     }
-    
+}
+
+// MARK: - Bar item renderers
+
+/// Renders a bar item snapshot.
+///
+/// Note: this type is intentionally **not** `Equatable`.
+/// Some SwiftUI diffing paths treat `Equatable` views as update-skippable, which can prevent
+/// environment-driven updates (like changing tint) from reaching bar button content.
+struct TopNavigationBarItemContent: View {
+    let item: TopNavigationBarItem
+
     var body: some View {
-        view
+        item.view
+            // Bar items should behave like native `UINavigationBar` buttons.
+            // We provide a `.tint`-backed foreground style by default. Callers can still override
+            // colors inside their custom content when needed.
+            .foregroundStyle(.tint)
+            .topNavigationBarItemTapTarget()
     }
 }
 
@@ -151,30 +154,30 @@ struct TopNavigationBarHidesBackButtonPreferenceKey: PreferenceKey {
     }
 }
 
-struct TopNavigationBarLeadingPreferenceKey: PreferenceKey {
-    static let defaultValue: TopNavigationBarItemView? = nil
-    static func reduce(value: inout TopNavigationBarItemView?, nextValue: () -> TopNavigationBarItemView?) {
+struct TopNavigationBarLeadingPreferenceKey: @MainActor PreferenceKey {
+    @MainActor static let defaultValue: TopNavigationBarItem? = nil
+    static func reduce(value: inout TopNavigationBarItem?, nextValue: () -> TopNavigationBarItem?) {
         if let next = nextValue() { value = next }
     }
 }
 
-struct TopNavigationBarTrailingPrimaryPreferenceKey: PreferenceKey {
-    static let defaultValue: TopNavigationBarItemView? = nil
-    static func reduce(value: inout TopNavigationBarItemView?, nextValue: () -> TopNavigationBarItemView?) {
+struct TopNavigationBarTrailingPrimaryPreferenceKey: @MainActor PreferenceKey {
+    @MainActor static let defaultValue: TopNavigationBarItem? = nil
+    static func reduce(value: inout TopNavigationBarItem?, nextValue: () -> TopNavigationBarItem?) {
         if let next = nextValue() { value = next }
     }
 }
 
-struct TopNavigationBarTrailingSecondaryPreferenceKey: PreferenceKey {
-    static let defaultValue: TopNavigationBarItemView? = nil
-    static func reduce(value: inout TopNavigationBarItemView?, nextValue: () -> TopNavigationBarItemView?) {
+struct TopNavigationBarTrailingSecondaryPreferenceKey: @MainActor PreferenceKey {
+    @MainActor static let defaultValue: TopNavigationBarItem? = nil
+    static func reduce(value: inout TopNavigationBarItem?, nextValue: () -> TopNavigationBarItem?) {
         if let next = nextValue() { value = next }
     }
 }
 
-struct TopNavigationBarPrincipalViewPreferenceKey: PreferenceKey {
-    static let defaultValue: TopNavigationPrincipalView? = nil
-    static func reduce(value: inout TopNavigationPrincipalView?, nextValue: () -> TopNavigationPrincipalView?) {
+struct TopNavigationBarPrincipalViewPreferenceKey: @MainActor PreferenceKey {
+    @MainActor static let defaultValue: TopNavigationBarPrincipal? = nil
+    static func reduce(value: inout TopNavigationBarPrincipal?, nextValue: () -> TopNavigationBarPrincipal?) {
         if let next = nextValue() { value = next }
     }
 }

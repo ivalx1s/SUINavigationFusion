@@ -10,12 +10,12 @@ extension TopNavigationBar {
         // MARK: Параметры, передаваемые из модификатора
         let isRoot: Bool
         let hidesBackButton: Bool?
-        let leadingView: TopNavigationBarItemView?
-        let trailingPrimaryView: TopNavigationBarItemView?
-        let trailingSecondaryView: TopNavigationBarItemView?
+        let leadingView: TopNavigationBarItem?
+        let trailingPrimaryView: TopNavigationBarItem?
+        let trailingSecondaryView: TopNavigationBarItem?
         let title: String?
         let titleTextView: Text?
-        let principalView: TopNavigationPrincipalView?
+        let principalView: TopNavigationBarPrincipal?
         let titleStackSpacing: CGFloat?
         let subtitle: String?
         let currentSubtitleText: Text?
@@ -61,7 +61,7 @@ extension TopNavigationBar {
                 // --- Центр (title / principal)
                 Group {
                     if visibility[.principal] != .hidden, let principalView {
-                        principalView
+                        principalView.view
                             .frame(maxWidth: .infinity)
                     } else {
                         TitleStack(
@@ -228,7 +228,7 @@ extension TopNavigationBar.TopBar {
         let progress: Double
         let onBack: () -> Void
         let backButtonIcon: TopNavigationBarConfiguration.BackButtonIconResource?
-        let leadingView: TopNavigationBarItemView?
+        let leadingView: TopNavigationBarItem?
         let isLeadingViewVisible: Bool
         
         private var showsBack: Bool {
@@ -260,8 +260,8 @@ extension TopNavigationBar.TopBar {
     // Правый кластер = secondary + primary (измеряются вместе).
     private struct RightCluster: View {
         let progress: Double
-        let trailingPrimaryView: TopNavigationBarItemView?
-        let trailingSecondaryView: TopNavigationBarItemView?
+        let trailingPrimaryView: TopNavigationBarItem?
+        let trailingSecondaryView: TopNavigationBarItem?
         let visibility: [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]
         
         var body: some View {
@@ -289,7 +289,7 @@ extension TopNavigationBar.TopBar {
     
     // Кастомный leading-элемент.
     struct LeadingItem: View {
-        let leading: TopNavigationBarItemView
+        let leading: TopNavigationBarItem
         let pageTransitionProgress: Double
         let hasBackButton: Bool
         
@@ -300,7 +300,7 @@ extension TopNavigationBar.TopBar {
         }
         
         var body: some View {
-            leading
+            TopNavigationBarItemContent(item: leading)
             // Если рядом есть back — небольшой зазор 4pt между back и leading.
                 .padding(.leading, hasBackButton ? 4 : 0)
                 .opacity(opacity)
@@ -310,7 +310,7 @@ extension TopNavigationBar.TopBar {
     
     // Вторичный (левее) элемент справа.
     struct TrailingSecondary: View {
-        let trailingSecondaryView: TopNavigationBarItemView
+        let trailingSecondaryView: TopNavigationBarItem
         let progress: Double
         
         private var opacity: Double {
@@ -320,7 +320,7 @@ extension TopNavigationBar.TopBar {
         }
         
         var body: some View {
-            trailingSecondaryView
+            TopNavigationBarItemContent(item: trailingSecondaryView)
                 .opacity(opacity)
                 .fixedSize(horizontal: true, vertical: false)
         }
@@ -328,7 +328,7 @@ extension TopNavigationBar.TopBar {
     
     // Основной (правее всех) элемент справа.
     struct TrailingPrimary: View {
-        let trailing: TopNavigationBarItemView
+        let trailing: TopNavigationBarItem
         let pageTransitionProgress: Double
         
         private var opacity: Double {
@@ -338,7 +338,7 @@ extension TopNavigationBar.TopBar {
         }
         
         var body: some View {
-            trailing
+            TopNavigationBarItemContent(item: trailing)
             // Без доп. трэйлинга — дистанцию до края контролирует rightInset контейнера.
                 .opacity(opacity)
                 .fixedSize(horizontal: true, vertical: false)

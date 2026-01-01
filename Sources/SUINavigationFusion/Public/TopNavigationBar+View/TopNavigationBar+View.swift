@@ -182,7 +182,7 @@ private struct TopNavigationBarItemPreferenceWriter<Item: View>: ViewModifier {
     private var resolvedID: AnyHashable { id ?? fallbackID }
 
     func body(content root: Content) -> some View {
-        let itemView = TopNavigationBarItemView(id: resolvedID, updateKey: updateKey, view: AnyView(content()))
+        let itemView = TopNavigationBarItem(id: resolvedID, updateKey: updateKey, view: AnyView(content()))
 
         switch preference {
         case .leading:
@@ -210,7 +210,7 @@ private struct TopNavigationBarPrincipalPreferenceWriter<Item: View>: ViewModifi
     func body(content root: Content) -> some View {
         root.preference(
             key: TopNavigationBarPrincipalViewPreferenceKey.self,
-            value: TopNavigationPrincipalView(id: resolvedID, updateKey: updateKey, view: AnyView(content()))
+            value: TopNavigationBarPrincipal(id: resolvedID, updateKey: updateKey, view: AnyView(content()))
         )
     }
 }
