@@ -7,6 +7,7 @@ import Foundation
 @MainActor
 public struct RestorableNavigationShell<Route: NavigationRoute>: View {
     private let id: String
+    private let idScope: NavigationStackIDScope
     private let providedNavigator: Navigator?
     private let configuration: TopNavigationBarConfiguration
     private let store: NavigationStackStateStore
@@ -20,6 +21,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
 
     public init<Root: View, Destination: View>(
         id: String,
+        idScope: NavigationStackIDScope = .global,
         navigator: Navigator? = nil,
         configuration: TopNavigationBarConfiguration = .defaultMaterial,
         store: NavigationStackStateStore = UserDefaultsNavigationStackStore(),
@@ -32,6 +34,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
         @ViewBuilder destination: @escaping (Route) -> Destination
     ) {
         self.id = id
+        self.idScope = idScope
         self.providedNavigator = navigator
         self.configuration = configuration
         self.store = store
@@ -47,6 +50,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
     public var body: some View {
         PathRestorableNavigationShell(
             id: id,
+            idScope: idScope,
             navigator: providedNavigator,
             configuration: configuration,
             store: store,

@@ -8,6 +8,69 @@ import Foundation
 @MainActor
 public struct PathRestorableNavigationShell<Root: View>: View {
     private let id: String
+    private let idScope: NavigationStackIDScope
+    private let providedNavigator: Navigator?
+    private let configuration: TopNavigationBarConfiguration
+    private let store: NavigationStackStateStore
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+    private let policy: NavigationRestorePolicy
+    private let destinations: (NavigationDestinationRegistry) -> Void
+    private let rootBuilder: (Navigator) -> Root
+
+    @SceneStorage("SUINavigationFusion.NavigationStack.sceneID") private var sceneID = UUID().uuidString
+
+    public init(
+        id: String,
+        idScope: NavigationStackIDScope = .global,
+        navigator: Navigator? = nil,
+        configuration: TopNavigationBarConfiguration = .defaultMaterial,
+        store: NavigationStackStateStore = UserDefaultsNavigationStackStore(),
+        encoder: JSONEncoder = .init(),
+        decoder: JSONDecoder = .init(),
+        policy: NavigationRestorePolicy = .init(),
+        destinations: @escaping (NavigationDestinationRegistry) -> Void,
+        @ViewBuilder root: @escaping (Navigator) -> Root
+    ) {
+        self.id = id
+        self.idScope = idScope
+        self.providedNavigator = navigator
+        self.configuration = configuration
+        self.store = store
+        self.encoder = encoder
+        self.decoder = decoder
+        self.policy = policy
+        self.destinations = destinations
+        self.rootBuilder = root
+    }
+
+    private var effectiveID: String {
+        switch idScope {
+        case .global:
+            return id
+        case .scene:
+            return "\(id).\(sceneID)"
+        }
+    }
+
+    public var body: some View {
+        _PathRestorableNavigationShellCore(
+            id: effectiveID,
+            navigator: providedNavigator,
+            configuration: configuration,
+            store: store,
+            encoder: encoder,
+            decoder: decoder,
+            policy: policy,
+            destinations: destinations,
+            root: rootBuilder
+        )
+    }
+}
+
+@MainActor
+private struct _PathRestorableNavigationShellCore<Root: View>: View {
+    private let id: String
     private let providedNavigator: Navigator?
     private let configuration: TopNavigationBarConfiguration
     private let rootBuilder: (Navigator) -> Root
@@ -15,14 +78,14 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     @StateObject private var ownedNavigator = Navigator()
     @StateObject private var restorationState: _RestorationState
 
-    public init(
+    init(
         id: String,
-        navigator: Navigator? = nil,
-        configuration: TopNavigationBarConfiguration = .defaultMaterial,
-        store: NavigationStackStateStore = UserDefaultsNavigationStackStore(),
-        encoder: JSONEncoder = .init(),
-        decoder: JSONDecoder = .init(),
-        policy: NavigationRestorePolicy = .init(),
+        navigator: Navigator?,
+        configuration: TopNavigationBarConfiguration,
+        store: NavigationStackStateStore,
+        encoder: JSONEncoder,
+        decoder: JSONDecoder,
+        policy: NavigationRestorePolicy,
         destinations: @escaping (NavigationDestinationRegistry) -> Void,
         @ViewBuilder root: @escaping (Navigator) -> Root
     ) {
@@ -47,7 +110,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
         providedNavigator ?? ownedNavigator
     }
 
-    public var body: some View {
+    var body: some View {
         VStack {
             _NavigationRoot(
                 navigator: navigator,

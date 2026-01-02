@@ -97,7 +97,8 @@ Only `navigator.push(route:)` participates in restoration. `navigator.push(_ vie
   - Option 4: register with explicit per-destination keys (e.g. `"thread"`, `"settings"`).
   - `.type(...)` exists for convenience and applies best-effort normalization, but it remains refactor-sensitive.
 - **Support renames with `aliases:`.** If you rename a key, keep the old key in `aliases:` so existing persisted stacks still restore.
-- **Make `id:` scene-unique for multi-window apps.** Each window/scene needs its own `id:`; otherwise multiple scenes overwrite each other in the store.
+- **Make `id:` scene-unique for multi-window apps.** Each window/scene needs its own persisted stack id; otherwise multiple scenes overwrite each other in the store.
+  - Use `idScope: .scene` for automatic per-scene scoping (recommended).
 - **Treat your route payload as a persisted schema.** Avoid breaking `Codable` changes, or keep backward-compatible decoding (versioning/migrations).
   - If you need stable date/key strategies, pass custom `encoder:` / `decoder:` into the restorable shell.
 
@@ -181,24 +182,18 @@ Call `navigator.clearCachedStack()` to remove the persisted snapshot for the cur
 
 ### Scene-unique stack ids (multi-window)
 
-If your app supports multiple windows/scenes, pass a different `id:` per scene. A simple pattern is to keep a
-stable UUID in `@SceneStorage` and incorporate it into the stack id:
+If your app supports multiple windows/scenes, use `idScope: .scene` to automatically scope snapshots per scene/window:
 
 ```swift
-struct CatalogTab: View {
-    @SceneStorage("com.myapp.catalog.sceneID") private var sceneID = UUID().uuidString
-
-    var body: some View {
-        RestorableNavigationShell<AppRoute>(
-            id: "catalog.\(sceneID)",
-            key: "com.myapp.catalogRoute",
-            root: { _ in CatalogRootScreen() },
-            destination: { route in
-                /* ... */
-            }
-        )
+RestorableNavigationShell<AppRoute>(
+    id: "catalog",
+    idScope: .scene,
+    key: "com.myapp.catalogRoute",
+    root: { _ in CatalogRootScreen() },
+    destination: { route in
+        /* ... */
     }
-}
+)
 ```
 
 ## Top bar configuration
