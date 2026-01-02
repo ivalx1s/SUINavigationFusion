@@ -74,9 +74,97 @@ struct ThreadScreen: View {
 
 ## API surface:
 	•	push(_ view:animated: Bool = true, disableBackGesture: Bool = false)
+	•	push(route:animated: Bool = true, disableBackGesture: Bool = false)
 	•	pop() / popNonAnimated()
 	•	popToRoot(animated: Bool = true)
 	•	pop(levels: Int, animated: Bool = true)
+	•	clearCachedStack()
+
+## Navigation stack restoration (state caching)
+
+`Navigator.push(_ view:)` accepts arbitrary SwiftUI views, which are not serializable. If you want navigation stack
+restoration, push a serializable `NavigationRoute` instead:
+
+- Use `RestorableNavigationShell` (Option 3) for a single route type (usually an enum).
+- Use `PathRestorableNavigationShell` (Option 4) for a modular, registry-driven setup (NavigationPath-like).
+
+Only `navigator.push(route:)` participates in restoration. `navigator.push(_ view:)` is treated as transient.
+
+### Option 3 — single `Route` type (recommended for small apps)
+
+```swift
+import SUINavigationFusion
+
+enum AppRoute: NavigationRoute {
+    case thread(id: String)
+    case settings
+}
+
+RestorableNavigationShell<AppRoute>(
+    id: "mainStack",
+    configuration: .defaultMaterial,
+    root: { _ in InboxScreen() },
+    destination: { route in
+        switch route {
+        case .thread(let id): ThreadScreen(id: id)
+        case .settings: SettingsScreen()
+        }
+    }
+)
+```
+
+Push a route:
+
+```swift
+navigator.push(route: AppRoute.thread(id: "123"))
+```
+
+### Option 4 — registry-driven (recommended for modular apps)
+
+```swift
+import SUINavigationFusion
+
+struct ThreadRoute: NavigationRoute { let id: String }
+struct SettingsRoute: NavigationRoute { init() {} }
+
+PathRestorableNavigationShell(
+    id: "mainStack",
+    destinations: { registry in
+        registry.register(ThreadRoute.self, key: "thread") { route in
+            ThreadScreen(id: route.id)
+        }
+        registry.register(SettingsRoute.self, key: "settings") { _ in
+            SettingsScreen()
+        }
+    },
+    root: { _ in InboxScreen() }
+)
+```
+
+Push a payload type:
+
+```swift
+navigator.push(route: ThreadRoute(id: "123"))
+```
+
+### What is persisted
+
+- The route payload (`Codable`) for every `push(route:)`.
+- `disableBackGesture` flag per entry.
+
+### What is NOT persisted
+
+- SwiftUI local state (`@State`, scroll position, focus, etc.). Reconstruct those from your route payload if needed.
+- Top bar titles / items (they are derived from each screen’s SwiftUI preferences).
+
+### Mixing route pushes and view pushes
+
+You can mix `push(route:)` and `push(_ view:)`, but restoration can only rebuild the prefix of the stack that is
+fully route-backed. A transient `push(_ view:)` above root truncates the persisted snapshot for everything above it.
+
+### Clearing cached state
+
+Call `navigator.clearCachedStack()` to remove the persisted snapshot for the current restorable shell.
 
 ## Top bar configuration
 

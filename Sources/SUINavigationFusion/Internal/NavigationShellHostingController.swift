@@ -14,14 +14,17 @@ protocol NavigationBackGesturePolicyProviding: AnyObject {
 final class NavigationShellHostingController<Content: View>: UIHostingController<Content>, NavigationTransitionProgressHolder, NavigationBackGesturePolicyProviding {
     let navigationPageTransitionProgress: NavigationPageTransitionProgress
     let disablesBackGesture: Bool
+    let _restorationInfo: _NavigationRestorationInfo?
     
     init(
         rootView: Content,
         navigationPageTransitionProgress: NavigationPageTransitionProgress,
-        disablesBackGesture: Bool = false
+        disablesBackGesture: Bool = false,
+        restorationInfo: _NavigationRestorationInfo? = nil
     ) {
         self.navigationPageTransitionProgress = navigationPageTransitionProgress
         self.disablesBackGesture = disablesBackGesture
+        self._restorationInfo = restorationInfo
         super.init(rootView: rootView)
     }
     
@@ -42,3 +45,5 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
         navigationController?.setNavigationBarHidden(true, animated: false)
     }
 }
+
+extension NavigationShellHostingController: _NavigationRestorable {}

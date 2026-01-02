@@ -36,6 +36,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// Shared top-bar configuration for this navigation stack.
     /// Updated by `NavigationShell` and injected into every hosted screen.
     let topNavigationBarConfigurationStore = TopNavigationBarConfigurationStore()
+    var _restorationContext: _NavigationStackRestorationContext?
     
     // MARK: - Equatable
     
@@ -100,6 +101,26 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     }
     
     // MARK: - Stack operations
+
+    func _makeHostingController(
+        content: AnyView,
+        disableBackGesture: Bool,
+        restorationInfo: _NavigationRestorationInfo?
+    ) -> UIViewController {
+        let progress = NavigationPageTransitionProgress()
+        let decoratedContent = Color.clear.overlay { content }
+            .topNavigationBar(isRoot: false)
+            .environmentObject(progress)
+            .environmentObject(topNavigationBarConfigurationStore)
+            .environmentObject(self)
+
+        return NavigationShellHostingController(
+            rootView: decoratedContent,
+            navigationPageTransitionProgress: progress,
+            disablesBackGesture: disableBackGesture,
+            restorationInfo: restorationInfo
+        )
+    }
     
     /// Pushes a SwiftUI view onto the navigation stack.
     ///
@@ -109,41 +130,99 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///     immediate push.
     public func push<V: View>(_ view: V, animated: Bool = true, disableBackGesture: Bool = false) {
         guard let navigationController = currentNavigationController() else { return }
-        let progress = NavigationPageTransitionProgress()
-        let content  = Color.clear.overlay(content: { view })
-            .topNavigationBar(isRoot: false)
-            .environmentObject(progress)
-            .environmentObject(topNavigationBarConfigurationStore)
-            .environmentObject(self)
-        let hosting = NavigationShellHostingController(
-            rootView: content,
-            navigationPageTransitionProgress: progress,
-            disablesBackGesture: disableBackGesture
+
+        let controller = _makeHostingController(
+            content: AnyView(view),
+            disableBackGesture: disableBackGesture,
+            restorationInfo: nil
         )
-        
-        navigationController.pushViewController(hosting, animated: animated)
+
+        navigationController.pushViewController(controller, animated: animated)
         navigationController.setNavigationBarHidden(true, animated: false)
+        _restorationContext?.syncSnapshot(from: navigationController)
+    }
+
+    /// Pushes a serializable route onto the navigation stack.
+    ///
+    /// Route-based pushes can participate in navigation stack caching/restoration when the stack
+    /// is hosted by `PathRestorableNavigationShell` / `RestorableNavigationShell`.
+    public func push<Route: NavigationRoute>(
+        route: Route,
+        animated: Bool = true,
+        disableBackGesture: Bool = false
+    ) {
+        guard let navigationController = currentNavigationController() else { return }
+        guard let restorationContext = _restorationContext else {
+            assertionFailure("Navigator.push(route:) requires a restorable navigation shell.")
+            return
+        }
+
+        guard let key = restorationContext.registry.key(for: Route.self) else {
+            assertionFailure("No destination registered for route type: \(Route.self).")
+            return
+        }
+
+        guard let registration = restorationContext.registry.registration(for: key) else {
+            assertionFailure("No destination registered for key: \(key.rawValue).")
+            return
+        }
+        guard registration.payloadTypeID == ObjectIdentifier(Route.self) else {
+            assertionFailure("Destination key '\(key.rawValue)' is registered for a different route type.")
+            return
+        }
+
+        let payload: Data
+        do {
+            payload = try restorationContext.encoder.encode(route)
+        } catch {
+            assertionFailure("Failed to encode route payload: \(error).")
+            return
+        }
+
+        let view = registration.buildViewFromValue(route)
+        let restorationInfo = _NavigationRestorationInfo(key: key, payload: payload)
+
+        let controller = _makeHostingController(
+            content: view,
+            disableBackGesture: disableBackGesture,
+            restorationInfo: restorationInfo
+        )
+
+        navigationController.pushViewController(controller, animated: animated)
+        navigationController.setNavigationBarHidden(true, animated: false)
+        restorationContext.syncSnapshot(from: navigationController)
+    }
+
+    /// Clears cached/restorable navigation state for the current navigation shell (no-op otherwise).
+    public func clearCachedStack() {
+        _restorationContext?.clear()
     }
     
     /// Pops the top view controller.
     ///
     /// - Parameter animated: `true` to animate the pop (default).
     public func pop() {
-        currentNavigationController()?.popViewController(animated: true)
+        guard let navigationController = currentNavigationController() else { return }
+        navigationController.popViewController(animated: true)
+        _restorationContext?.syncSnapshot(from: navigationController)
     }
     
     /// Pops the top view controller.
     ///
     /// - Parameter animated: `true` to animate the pop (default).
     public func popNonAnimated() {
-        currentNavigationController()?.popViewController(animated: false)
+        guard let navigationController = currentNavigationController() else { return }
+        navigationController.popViewController(animated: false)
+        _restorationContext?.syncSnapshot(from: navigationController)
     }
     
     /// Pops all view controllers until only the root remains.
     ///
     /// - Parameter animated: `true` to animate the transition (default).
     public func popToRoot(animated: Bool = true) {
-        currentNavigationController()?.popToRootViewController(animated: animated)
+        guard let navigationController = currentNavigationController() else { return }
+        navigationController.popToRootViewController(animated: animated)
+        _restorationContext?.syncSnapshot(from: navigationController)
     }
     
     /// Pops a specific number of levels up the navigation stack.
@@ -163,6 +242,8 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             let target = navigationController.viewControllers[depth - levels - 1]
             navigationController.popToViewController(target, animated: animated)
         }
+
+        _restorationContext?.syncSnapshot(from: navigationController)
     }
     
 }

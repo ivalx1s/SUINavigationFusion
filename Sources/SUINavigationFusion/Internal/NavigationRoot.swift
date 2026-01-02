@@ -52,24 +52,29 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
        for the currently visible screen as well as any pushed screens.
      */
     private let configuration: TopNavigationBarConfiguration
+    private let restorationContext: _NavigationStackRestorationContext?
     
     init(
         configuration: TopNavigationBarConfiguration,
+        restorationContext: _NavigationStackRestorationContext? = nil,
         @ViewBuilder root: @escaping (Navigator) -> Root
     ) {
         self.navigator = nil
         self.rootBuilder = root
         self.configuration = configuration
+        self.restorationContext = restorationContext
     }
     
     init(
         navigator: Navigator,
         configuration: TopNavigationBarConfiguration,
+        restorationContext: _NavigationStackRestorationContext? = nil,
         @ViewBuilder root: @escaping () -> Root
     ) {
         self.navigator = navigator
         self.rootBuilder = { _ in root() }
         self.configuration = configuration
+        self.restorationContext = restorationContext
     }
     
     // MARK: - Coordinator
@@ -77,6 +82,9 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UINavigationControllerDelegate {
         let progress = NavigationPageTransitionProgress()
         var injectedNavigator: Navigator?
+        var restorationContext: _NavigationStackRestorationContext?
+        var didAttemptRestore: Bool = false
+        var isRestoring: Bool = false
 
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
@@ -138,6 +146,15 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 self?.clamp(cancelled: context.isCancelled)
                 self?.stopDisplayLink()
             }
+        }
+
+        public func navigationController(
+            _ navigationController: UINavigationController,
+            didShow viewController: UIViewController,
+            animated: Bool
+        ) {
+            guard !isRestoring, let navigationController = navigationController as? NCUINavigationController else { return }
+            restorationContext?.syncSnapshot(from: navigationController)
         }
         
         private func applyCurve(_ timeFraction: CGFloat, curve: UIView.AnimationCurve) -> CGFloat {
@@ -252,9 +269,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 
             let transitionProgress = context.coordinator.progress
             context.coordinator.injectedNavigator = externalNavigator
+            context.coordinator.restorationContext = restorationContext
 
             externalNavigator.navigationPageTransitionProgress = transitionProgress
             externalNavigator.topNavigationBarConfigurationStore.setConfiguration(configuration)
+            externalNavigator._restorationContext = restorationContext
             let rootController = makeRootViewController(
                 for: externalNavigator,
                 progress: transitionProgress
@@ -262,6 +281,17 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             navigationController.viewControllers = [rootController]
             navigationController.setNavigationBarHidden(true, animated: false)
             navigationController.delegate = context.coordinator
+
+            if let restorationContext, !context.coordinator.didAttemptRestore {
+                context.coordinator.didAttemptRestore = true
+                context.coordinator.isRestoring = true
+                restorationContext.restoreIfAvailable(
+                    navigationController: navigationController,
+                    rootController: rootController,
+                    navigator: externalNavigator
+                )
+                context.coordinator.isRestoring = false
+            }
             return navigationController
         } else {
             let navigationController = NCUINavigationController()
@@ -272,9 +302,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 
             let transitionProgress = context.coordinator.progress
             context.coordinator.injectedNavigator = autoInjectedNavigator
+            context.coordinator.restorationContext = restorationContext
 
             autoInjectedNavigator.navigationPageTransitionProgress = transitionProgress
             autoInjectedNavigator.topNavigationBarConfigurationStore.setConfiguration(configuration)
+            autoInjectedNavigator._restorationContext = restorationContext
             let rootController = makeRootViewController(
                 for: autoInjectedNavigator,
                 progress: transitionProgress
@@ -282,6 +314,17 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             navigationController.viewControllers = [rootController]
             navigationController.setNavigationBarHidden(true, animated: false)
             navigationController.delegate = context.coordinator
+
+            if let restorationContext, !context.coordinator.didAttemptRestore {
+                context.coordinator.didAttemptRestore = true
+                context.coordinator.isRestoring = true
+                restorationContext.restoreIfAvailable(
+                    navigationController: navigationController,
+                    rootController: rootController,
+                    navigator: autoInjectedNavigator
+                )
+                context.coordinator.isRestoring = false
+            }
             return navigationController
         }
     }
