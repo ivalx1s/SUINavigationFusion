@@ -90,6 +90,17 @@ restoration, push a serializable `NavigationRoute` instead:
 
 Only `navigator.push(route:)` participates in restoration. `navigator.push(_ view:)` is treated as transient.
 
+### Robustness recommendations (read this before shipping)
+
+- **Use explicit stable destination keys.** Keys are persisted, so avoid type-derived keys for long-lived data.
+  - Option 3: pass `key:` explicitly.
+  - Option 4: register with explicit per-destination keys (e.g. `"thread"`, `"settings"`).
+  - `.type(...)` exists for convenience and applies best-effort normalization, but it remains refactor-sensitive.
+- **Support renames with `aliases:`.** If you rename a key, keep the old key in `aliases:` so existing persisted stacks still restore.
+- **Make `id:` scene-unique for multi-window apps.** Each window/scene needs its own `id:`; otherwise multiple scenes overwrite each other in the store.
+- **Treat your route payload as a persisted schema.** Avoid breaking `Codable` changes, or keep backward-compatible decoding (versioning/migrations).
+  - If you need stable date/key strategies, pass custom `encoder:` / `decoder:` into the restorable shell.
+
 ### Option 3 — single `Route` type (recommended for small apps)
 
 ```swift
@@ -102,6 +113,8 @@ enum AppRoute: NavigationRoute {
 
 RestorableNavigationShell<AppRoute>(
     id: "mainStack",
+    key: "com.myapp.mainRoute",
+    aliases: [.type(AppRoute.self)], // optional: keep if you previously shipped the default key
     configuration: .defaultMaterial,
     root: { _ in InboxScreen() },
     destination: { route in
@@ -130,10 +143,10 @@ struct SettingsRoute: NavigationRoute { init() {} }
 PathRestorableNavigationShell(
     id: "mainStack",
     destinations: { registry in
-        registry.register(ThreadRoute.self, key: "thread") { route in
+        registry.register(ThreadRoute.self, key: "com.myapp.thread") { route in
             ThreadScreen(id: route.id)
         }
-        registry.register(SettingsRoute.self, key: "settings") { _ in
+        registry.register(SettingsRoute.self, key: "com.myapp.settings") { _ in
             SettingsScreen()
         }
     },
@@ -165,6 +178,28 @@ fully route-backed. A transient `push(_ view:)` above root truncates the persist
 ### Clearing cached state
 
 Call `navigator.clearCachedStack()` to remove the persisted snapshot for the current restorable shell.
+
+### Scene-unique stack ids (multi-window)
+
+If your app supports multiple windows/scenes, pass a different `id:` per scene. A simple pattern is to keep a
+stable UUID in `@SceneStorage` and incorporate it into the stack id:
+
+```swift
+struct CatalogTab: View {
+    @SceneStorage("com.myapp.catalog.sceneID") private var sceneID = UUID().uuidString
+
+    var body: some View {
+        RestorableNavigationShell<AppRoute>(
+            id: "catalog.\(sceneID)",
+            key: "com.myapp.catalogRoute",
+            root: { _ in CatalogRootScreen() },
+            destination: { route in
+                /* ... */
+            }
+        )
+    }
+}
+```
 
 ## Top bar configuration
 
