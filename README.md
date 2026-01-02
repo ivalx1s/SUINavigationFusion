@@ -155,6 +155,9 @@ PathRestorableNavigationShell(
 )
 ```
 
+`destinations` is a configuration closure: it is called once to register all destinations for this stack by mutating the
+provided registry via `registry.register(...)` (avoid side effects).
+
 Push a payload type:
 
 ```swift

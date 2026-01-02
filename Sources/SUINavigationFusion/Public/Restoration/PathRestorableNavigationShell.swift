@@ -36,7 +36,10 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     ///   - encoder: Encoder used to serialize route payloads and snapshots.
     ///   - decoder: Decoder used to deserialize route payloads and snapshots.
     ///   - policy: Failure policy for missing destinations or decode failures.
-    ///   - destinations: Register all restorable destinations for this stack.
+    ///   - destinations: A registry configuration closure used to register all restorable destinations for this stack.
+    ///     The closure is called once when the shell’s restoration state is created and is expected to be deterministic
+    ///     (avoid side effects). It returns `Void` because its purpose is to mutate the provided registry via
+    ///     `registry.register(...)`.
     ///   - root: Root screen builder (not persisted).
     public init(
         id: String,
@@ -160,6 +163,9 @@ private final class _RestorationState: ObservableObject {
         destinations: (NavigationDestinationRegistry) -> Void
     ) {
         let registry = NavigationDestinationRegistry()
+        // `destinations` is intentionally a configuration closure: it mutates `registry` by calling
+        // `registry.register(...)` and is invoked once when this state is created. The configured registry is then
+        // used to build views for both `navigator.push(route:)` and restore-time reconstruction.
         destinations(registry)
 
         self.context = _NavigationStackRestorationContext(
