@@ -5,6 +5,8 @@ import Foundation
 ///
 /// The stack is restored from a persisted snapshot of `{destinationKey, payload}` entries.
 /// Only `navigator.push(route:)` participates in restoration; `navigator.push(_ view:)` is treated as transient.
+///
+/// The `id` is used as the persistence key. Use `idScope: .scene` to isolate snapshots per window/scene.
 @MainActor
 public struct PathRestorableNavigationShell<Root: View>: View {
     private let id: String
@@ -18,8 +20,24 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     private let destinations: (NavigationDestinationRegistry) -> Void
     private let rootBuilder: (Navigator) -> Root
 
+    /// A stable per-scene identifier used when `idScope == .scene`.
+    ///
+    /// This allows multiple windows/scenes to use the same base `id` without overwriting each other’s snapshots.
     @SceneStorage("SUINavigationFusion.NavigationStack.sceneID") private var sceneID = UUID().uuidString
 
+    /// Creates a restorable navigation shell (Option 4 – registry-driven).
+    ///
+    /// - Parameters:
+    ///   - id: Base persistence identifier for this navigation stack.
+    ///   - idScope: Controls whether `id` is global (`.global`) or scoped per scene/window (`.scene`).
+    ///   - navigator: Optional external `Navigator` instance to reuse.
+    ///   - configuration: Shared top bar styling configuration for this stack.
+    ///   - store: Storage backend for persisted navigation snapshots.
+    ///   - encoder: Encoder used to serialize route payloads and snapshots.
+    ///   - decoder: Decoder used to deserialize route payloads and snapshots.
+    ///   - policy: Failure policy for missing destinations or decode failures.
+    ///   - destinations: Register all restorable destinations for this stack.
+    ///   - root: Root screen builder (not persisted).
     public init(
         id: String,
         idScope: NavigationStackIDScope = .global,
@@ -44,6 +62,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
         self.rootBuilder = root
     }
 
+    /// Final persistence identifier derived from `id` and `idScope`.
     private var effectiveID: String {
         switch idScope {
         case .global:
@@ -69,6 +88,10 @@ public struct PathRestorableNavigationShell<Root: View>: View {
 }
 
 @MainActor
+/// Core implementation that owns `@StateObject` state for restoration.
+///
+/// The outer shell computes `effectiveID` (including `@SceneStorage` when needed) and passes it here.
+/// This avoids initializing `@StateObject` with an id that may not yet be available during `init`.
 private struct _PathRestorableNavigationShellCore<Root: View>: View {
     private let id: String
     private let providedNavigator: Navigator?

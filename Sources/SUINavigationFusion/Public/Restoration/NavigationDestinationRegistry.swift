@@ -21,6 +21,15 @@ public final class NavigationDestinationRegistry {
 
     public init() {}
 
+    /// Registers a restorable destination for a route payload type.
+    ///
+    /// Register destinations once at the root of a restorable navigation shell.
+    ///
+    /// - Parameters:
+    ///   - type: The `Codable` payload type you will push via `navigator.push(route:)`.
+    ///   - key: A stable identifier persisted in navigation snapshots. Prefer explicit, namespaced keys.
+    ///   - aliases: Historical keys that should be treated as equivalent (useful when renaming keys).
+    ///   - destination: Builds the SwiftUI screen for the given payload.
     public func register<Item: NavigationPathItem, Screen: View>(
         _ type: Item.Type,
         key: NavigationDestinationKey,

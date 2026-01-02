@@ -36,6 +36,10 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// Shared top-bar configuration for this navigation stack.
     /// Updated by `NavigationShell` and injected into every hosted screen.
     let topNavigationBarConfigurationStore = TopNavigationBarConfigurationStore()
+
+    /// Internal restoration context installed by restorable shells.
+    ///
+    /// Non-`nil` only when the navigator is hosted by `PathRestorableNavigationShell` / `RestorableNavigationShell`.
     var _restorationContext: _NavigationStackRestorationContext?
     
     // MARK: - Equatable
@@ -146,6 +150,8 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///
     /// Route-based pushes can participate in navigation stack caching/restoration when the stack
     /// is hosted by `PathRestorableNavigationShell` / `RestorableNavigationShell`.
+    ///
+    /// If the navigator is not hosted by a restorable shell, this call asserts in debug builds and no-ops.
     public func push<Route: NavigationRoute>(
         route: Route,
         animated: Bool = true,
