@@ -29,10 +29,14 @@ final class _NavigationStackRestorationContext {
         self.encoder = encoder
         self.decoder = decoder
         self.policy = policy
+        // Seed with persisted value so `saveSnapshotData(nil)` actually clears stale/corrupt data.
+        self.lastSavedData = store.load(key: id)
     }
 
     func clear() {
-        saveSnapshotData(nil)
+        // Clear unconditionally (do not rely on `lastSavedData` to reflect external store changes).
+        lastSavedData = nil
+        store.save(key: id, data: nil)
     }
 
     func restoreIfAvailable(
@@ -40,12 +44,21 @@ final class _NavigationStackRestorationContext {
         rootController: UIViewController,
         navigator: Navigator
     ) {
-        guard let data = store.load(key: id) else { return }
+        guard let data = store.load(key: id) else {
+            lastSavedData = nil
+            return
+        }
+        lastSavedData = data
 
         let snapshot: _NavigationStackSnapshot
         do {
             snapshot = try decoder.decode(_NavigationStackSnapshot.self, from: data)
         } catch {
+            saveSnapshotData(nil)
+            return
+        }
+
+        guard snapshot.schemaVersion == 1 else {
             saveSnapshotData(nil)
             return
         }
