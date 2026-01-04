@@ -74,7 +74,7 @@ struct ThreadScreen: View {
 
 ## API surface:
 	•	push(_ view:animated: Bool = true, disableBackGesture: Bool = false)
-	•	push(route:animated: Bool = true, disableBackGesture: Bool = false)
+	•	push(route:animated: Bool = true, disableBackGesture: Bool = false) // route must be `NavigationPathItem`
 	•	pop() / popNonAnimated()
 	•	popToRoot(animated: Bool = true)
 	•	pop(levels: Int, animated: Bool = true)
@@ -91,9 +91,15 @@ Feature modules can decouple from a concrete stack by exporting a `NavigationDes
 
 ```swift
 // Feature module
+public struct ThreadRoute: NavigationPathItem {
+    public static let destinationKey: NavigationDestinationKey = "com.myapp.thread"
+    public let id: String
+}
+
 public enum ThreadFeatureNavigation {
     public static let destinations = NavigationDestinations { registry in
-        registry.register(ThreadRoute.self, key: "com.myapp.thread") { route in
+        // Uses `ThreadRoute.destinationKey` as the persisted key.
+        registry.register(ThreadRoute.self) { route in
             ThreadScreen(id: route.id)
         }
     }
@@ -115,7 +121,9 @@ TypedNavigationShell(
 ## Navigation stack restoration (state caching)
 
 `Navigator.push(_ view:)` accepts arbitrary SwiftUI views, which are not serializable. If you want navigation stack
-restoration, push a serializable `NavigationRoute` instead:
+restoration (and/or path-driven navigation), push a serializable route payload via `navigator.push(route:)`.
+
+Route payloads should conform to `NavigationPathItem` so they have a stable persisted destination key.
 
 - Use `RestorableNavigationShell` (Option 3) for a single route type (usually an enum).
 - Use `PathRestorableNavigationShell` (Option 4) for a modular, registry-driven setup (NavigationPath-like).
@@ -139,15 +147,16 @@ Only `navigator.push(route:)` participates in restoration. `navigator.push(_ vie
 ```swift
 import SUINavigationFusion
 
-enum AppRoute: NavigationRoute {
+enum AppRoute: NavigationPathItem {
+    static let destinationKey: NavigationDestinationKey = "com.myapp.mainRoute"
+
     case thread(id: String)
     case settings
 }
 
 RestorableNavigationShell<AppRoute>(
     id: "mainStack",
-    key: "com.myapp.mainRoute",
-    aliases: [.type(AppRoute.self)], // optional: keep if you previously shipped the default key
+    key: AppRoute.destinationKey,
     configuration: .defaultMaterial,
     additionalDestinations: ThreadFeatureNavigation.destinations, // optional
     root: { _ in InboxScreen() },
@@ -171,8 +180,14 @@ navigator.push(route: AppRoute.thread(id: "123"))
 ```swift
 import SUINavigationFusion
 
-struct ThreadRoute: NavigationRoute { let id: String }
-struct SettingsRoute: NavigationRoute { init() {} }
+struct ThreadRoute: NavigationPathItem {
+    static let destinationKey: NavigationDestinationKey = "com.myapp.thread"
+    let id: String
+}
+struct SettingsRoute: NavigationPathItem {
+    static let destinationKey: NavigationDestinationKey = "com.myapp.settings"
+    init() {}
+}
 
 PathRestorableNavigationShell(
     id: "mainStack",
@@ -267,6 +282,62 @@ Precedence: configuration `tintColor` → system.
 
 Note: since the bar is installed outside the screen subtree, per-screen tinting is intentionally not supported.
 The bar background is controlled separately via `TopNavigationBarConfiguration.backgroundMaterial` / `backgroundColor`.
+
+## Path-driven navigation (NavigationStack-like)
+
+If you want an external router/coordinator to own navigation state (similar to SwiftUI’s `NavigationStack(path:)`),
+bind a `SUINavigationPath` into a restorable shell using `path:`.
+
+In this mode:
+- The shell reconciles the UIKit stack to match the bound `SUINavigationPath`.
+- Interactive swipe-back updates the bound path (UIKit stack is authoritative for gestures).
+- `Navigator.push(_ view:)` is not supported (the stack must remain route-backed / representable as a path).
+
+### External router example
+
+```swift
+@MainActor
+final class AppRouter: ObservableObject {
+    @Published var path = SUINavigationPath()
+
+    func openThread(id: String) {
+        // You can build heterogeneous paths here (multiple route types).
+        try? path.append(route: ThreadRoute(id: id))
+    }
+
+    func goToRoot() {
+        path.clear()
+    }
+}
+```
+
+Bind it into a shell:
+
+```swift
+@StateObject var router = AppRouter()
+
+PathRestorableNavigationShell(
+    id: "mainStack",
+    idScope: .scene,
+    path: $router.path,
+    destinations: ThreadFeatureNavigation.destinations,
+    root: { _ in InboxScreen() }
+)
+```
+
+### Animation control
+
+Path-driven pushes/pops animate by default (SwiftUI-like).
+
+To disable animations for a specific path update (e.g. deep link), wrap it in a transaction:
+
+```swift
+var transaction = Transaction()
+transaction.disablesAnimations = true
+withTransaction(transaction) {
+    router.path = newPath
+}
+```
 
 ## Title & subtitle
 
@@ -436,9 +507,48 @@ ScrollView {
 
 The bar will fade from translucent to opaque as you scroll.
 
-## How it works (in brief)
+## Architecture
 
-NavigationShell hosts your root view inside a custom UINavigationController and hides the system bar. A custom top bar is injected via .safeAreaInset(.top, …) and styled through TopNavigationBarConfiguration. Pushes create hosting controllers that receive the same configuration and a transition progress object to sync animations with interactive gestures.
+SUINavigationFusion is a SwiftUI-first façade over a UIKit `UINavigationController`:
+- It hosts each SwiftUI screen inside a `UIHostingController` managed by a custom `NCUINavigationController`.
+- It keeps the system `UINavigationBar` hidden and renders its own SwiftUI top bar instead.
+
+### Core concepts
+
+- **`Navigator` (imperative API)**
+  - `Navigator` is injected as an `EnvironmentObject` into every hosted screen.
+  - It performs push/pop on the underlying UIKit stack.
+  - In path-driven mode (when a shell is created with `path:`), `Navigator` becomes a façade that mutates the bound
+    `SUINavigationPath` instead of mutating UIKit directly.
+
+- **Custom top bar (SwiftUI chrome)**
+  - Screens describe their bar content using view modifiers (`.topNavigationBarTitle`, `.topNavigationBarLeading`, etc.).
+  - Those modifiers write `PreferenceKey`s which are collected by a container modifier that renders the bar.
+  - The bar is installed outside the screen subtree via `.safeAreaInset(edge: .top, ...)`, which is why per-screen
+    tint overrides for bar items are intentionally not supported.
+
+- **`TopNavigationBarConfiguration` (stack-wide styling)**
+  - Shells inject a shared configuration store into the environment.
+  - When `tintColor` is non-`nil`, the library applies it as a SwiftUI `.tint(...)` to the hosted view hierarchy and
+    uses it for bar items.
+
+- **Typed routing (registry)**
+  - `NavigationDestinationRegistry` maps `{destinationKey, payloadType}` to “decode + build SwiftUI view”.
+  - `TypedNavigationShell` installs the registry without persistence.
+  - `PathRestorableNavigationShell` installs the registry and also enables persistence/restoration.
+  - Feature modules can stay decoupled by exporting `NavigationDestinations` bundles.
+
+- **Persistence / restoration**
+  - The persisted form of the route-backed stack is `SUINavigationPath` (`schemaVersion` + `elements`).
+  - The restoration engine rebuilds view controllers from `{key, payload}` via the registry.
+  - The saved snapshot is kept authoritative by observing `UINavigationControllerDelegate.didShow` (covers swipe-back).
+
+- **Path-driven navigation (external router-owned state)**
+  - If a shell is created with `path:`, the UIKit stack is reconciled to match the bound `SUINavigationPath`.
+  - Simple diffs (`push`/`pop`/`popToPrefix`) map to UIKit animated transitions; large diffs rebuild the stack.
+  - Use SwiftUI transactions to control animation for path mutations:
+    - default: animate
+    - disable: `withTransaction(Transaction(disablesAnimations: true)) { ... }`
 
 
 ## Sample app

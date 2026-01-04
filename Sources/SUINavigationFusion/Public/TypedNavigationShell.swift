@@ -2,7 +2,8 @@ import SwiftUI
 
 /// A navigation shell that supports typed route pushes via a destination registry (without persistence).
 ///
-/// Use this when you want `navigator.push(route:)` but do not need navigation stack caching/restoration.
+/// Use this when you want `navigator.push(route:)` (route payloads must conform to `NavigationPathItem`)
+/// but do not need navigation stack caching/restoration.
 /// For persisted restoration, use `PathRestorableNavigationShell` / `RestorableNavigationShell` instead.
 @available(iOS 15, *)
 @MainActor
@@ -84,4 +85,3 @@ private final class _RoutingState: ObservableObject {
         self.registry = registry
     }
 }
-

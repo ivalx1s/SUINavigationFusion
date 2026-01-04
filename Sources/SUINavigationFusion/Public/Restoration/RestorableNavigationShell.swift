@@ -5,6 +5,9 @@ import Foundation
 ///
 /// Use this when your app has a single, typed `Route` (often an enum) and you want an exhaustive `switch`.
 /// Use `idScope: .scene` to isolate snapshots per window/scene when supporting multi-window apps.
+///
+/// If you pass a `path:` binding, the shell becomes path-driven (NavigationStack-like) and will reconcile the UIKit
+/// stack to match the bound path, while keeping the bound path updated on interactive swipe-back.
 @MainActor
 public struct RestorableNavigationShell<Route: NavigationPathItem>: View {
     private let id: String
@@ -27,6 +30,7 @@ public struct RestorableNavigationShell<Route: NavigationPathItem>: View {
     /// - Parameters:
     ///   - id: Base persistence identifier for this navigation stack.
     ///   - idScope: Controls whether `id` is global (`.global`) or scoped per scene/window (`.scene`).
+    ///   - path: Optional bound navigation path. When provided, enables path-driven navigation.
     ///   - navigator: Optional external `Navigator` instance to reuse.
     ///   - configuration: Shared top bar styling configuration for this stack.
     ///   - store: Storage backend for persisted navigation snapshots.

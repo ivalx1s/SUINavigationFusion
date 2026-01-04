@@ -208,7 +208,9 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
 
     /// Pushes a serializable route onto the navigation stack.
     ///
-    /// Route-based pushes require a typed destination registry, installed by:
+    /// Route-based pushes require:
+    /// - the route type to conform to `NavigationPathItem` (so it has a stable destination key), and
+    /// - a typed destination registry installed by:
     /// - `TypedNavigationShell` (typed routing only)
     /// - `PathRestorableNavigationShell` / `RestorableNavigationShell` (typed routing + persistence)
     ///

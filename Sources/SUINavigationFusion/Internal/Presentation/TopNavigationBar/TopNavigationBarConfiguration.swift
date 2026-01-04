@@ -1,6 +1,16 @@
 import SwiftUI
 import Combine
 
+/// Stack-wide styling configuration for SUINavigationFusion’s custom top navigation bar.
+///
+/// `TopNavigationBarConfiguration` is injected into the SwiftUI environment by navigation shells and applies to:
+/// - the custom top bar UI (background, divider, title/subtitle typography, back icon, etc.)
+/// - the hosted view hierarchy’s tint when `tintColor` is non-`nil` (via SwiftUI `.tint(...)`)
+///
+/// Design note:
+/// The bar itself is rendered outside of each screen subtree (it is installed by a container modifier),
+/// so per-screen tint overrides for the bar are intentionally not supported. Use a different shell instance
+/// (or a different configuration) when you need a different stack-wide tint.
 public struct TopNavigationBarConfiguration: Sendable {
     
     /// Represents a custom symbol or image asset used for the navigation back‑button.

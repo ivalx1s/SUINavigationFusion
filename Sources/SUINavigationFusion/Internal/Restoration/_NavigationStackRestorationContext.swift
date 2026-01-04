@@ -5,6 +5,16 @@ import UIKit
 #endif
 
 @MainActor
+/// Internal engine that persists and restores a route-backed navigation stack.
+///
+/// The persisted representation is `SUINavigationPath`:
+/// - each element stores `{destinationKey, payload, disableBackGesture}`
+/// - the registry maps keys back to concrete payload types and view builders
+///
+/// This type is used in two modes:
+/// - **imperative stacks**: `Navigator` pushes/pops UIKit controllers directly and the context keeps a snapshot in sync
+/// - **path-driven stacks**: `_NavigationRoot` reconciles UIKit to a bound `SUINavigationPath`, and the context provides
+///   the “decode → build controllers” primitive (plus policy-based sanitization)
 final class _NavigationStackRestorationContext {
     private let id: String
     private let store: NavigationStackStateStore
@@ -33,6 +43,7 @@ final class _NavigationStackRestorationContext {
         self.lastSavedData = store.load(key: id)
     }
 
+    /// Clears the persisted snapshot for this stack id.
     func clear() {
         // Clear unconditionally (do not rely on `lastSavedData` to reflect external store changes).
         lastSavedData = nil
@@ -76,6 +87,12 @@ final class _NavigationStackRestorationContext {
         savePath(restoredPath)
     }
 
+    /// Persists a snapshot derived from the current UIKit stack.
+    ///
+    /// - Important: scanning stops at the first non-restorable controller above root.
+    ///   A transient `push(_ view:)` breaks determinism for everything above it.
+    ///
+    /// - Returns: The derived path and whether the entire suffix above root was representable.
     @discardableResult
     func syncSnapshot(from navigationController: NCUINavigationController) -> (path: SUINavigationPath, isFullyRepresentable: Bool) {
         let (path, isFullyRepresentable) = currentPath(from: navigationController)
@@ -89,6 +106,15 @@ final class _NavigationStackRestorationContext {
         return (path, isFullyRepresentable)
     }
 
+    /// Builds hosting controllers for the given desired path.
+    ///
+    /// The result is policy-sanitized:
+    /// - `.dropSuffixAndContinue`: returns the successfully built prefix and drops the invalid suffix
+    /// - `.clearAllAndShowRoot`: returns an empty array + empty path
+    ///
+    /// - Returns:
+    ///   - `viewControllers`: controllers for the restored/sanitized prefix
+    ///   - `sanitizedPath`: the path prefix that was actually representable
     func buildViewControllers(
         for path: SUINavigationPath,
         navigator: Navigator
@@ -131,6 +157,11 @@ final class _NavigationStackRestorationContext {
         return (viewControllers, SUINavigationPath(elements: elements))
     }
 
+    /// Derives the current `SUINavigationPath` from the UIKit stack.
+    ///
+    /// - Returns:
+    ///   - `path`: representable prefix above root
+    ///   - `isFullyRepresentable`: `false` if a non-restorable controller was found above root
     func currentPath(from navigationController: NCUINavigationController) -> (path: SUINavigationPath, isFullyRepresentable: Bool) {
         var elements: [SUINavigationPath.Element] = []
 

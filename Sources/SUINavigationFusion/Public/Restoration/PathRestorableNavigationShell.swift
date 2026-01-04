@@ -1,12 +1,20 @@
 import SwiftUI
 import Foundation
 
-/// A navigation shell that supports caching and restoring the navigation stack (Option 4).
+/// A navigation shell that supports caching/restoring the navigation stack and typed route destinations (Option 4).
 ///
 /// The stack is restored from a persisted snapshot of `{destinationKey, payload}` entries.
 /// Only `navigator.push(route:)` participates in restoration; `navigator.push(_ view:)` is treated as transient.
 ///
 /// The `id` is used as the persistence key. Use `idScope: .scene` to isolate snapshots per window/scene.
+///
+/// Path-driven navigation (NavigationStack-like):
+/// If you pass a `path:` binding, the shell treats that path as the desired navigation state and reconciles
+/// the underlying UIKit stack to match it. Interactive swipe-back updates the bound path, so an external router
+/// can own navigation state in the same way as SwiftUI’s `NavigationStack(path:)`.
+///
+/// In path-driven mode the stack must remain route-backed (representable as `SUINavigationPath` elements).
+/// `Navigator.push(_ view:)` is therefore not supported and will assert + no-op.
 @MainActor
 public struct PathRestorableNavigationShell<Root: View>: View {
     private let id: String
@@ -31,6 +39,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     /// - Parameters:
     ///   - id: Base persistence identifier for this navigation stack.
     ///   - idScope: Controls whether `id` is global (`.global`) or scoped per scene/window (`.scene`).
+    ///   - path: Optional bound navigation path. When provided, enables path-driven navigation.
     ///   - navigator: Optional external `Navigator` instance to reuse.
     ///   - configuration: Shared top bar styling configuration for this stack.
     ///   - store: Storage backend for persisted navigation snapshots.

@@ -1,10 +1,15 @@
 import SwiftUI
 
+/// Public visibility state used by `topNavigationBarVisibility(_:for:)`.
 public enum TopNavigationBarVisibility: Hashable, Codable, Sendable {
     case visible
     case hidden
 }
 
+/// Identifies a top navigation bar section that can be shown/hidden per screen.
+///
+/// Use `.trailingPosition(...)` to control a single trailing slot
+/// (for example, hide only the `.secondary` trailing item).
 public enum TopNavigationBarSection: Hashable, Codable, Sendable {
     case leading
     case principal
@@ -35,4 +40,3 @@ public extension View {
         )
     }
 }
-

@@ -3,7 +3,10 @@ import Foundation
 /// A serializable navigation payload that can be cached and restored.
 ///
 /// `Navigator.push(_:)` accepts arbitrary SwiftUI views, which cannot be reliably serialized.
-/// If you want navigation stack restoration, push a `NavigationRoute` instead via `navigator.push(route:)`.
+/// If you want typed routing, navigation stack restoration, or path-driven navigation, push a route payload
+/// via `navigator.push(route:)` and/or represent your stack as a `SUINavigationPath`.
+///
+/// In most apps, route payload types should conform to `NavigationPathItem` (which adds a stable destination key).
 public protocol NavigationRoute: Codable, Hashable, Sendable {}
 
 /// A route payload that can be used to build a `SUINavigationPath` without consulting a destination registry.
