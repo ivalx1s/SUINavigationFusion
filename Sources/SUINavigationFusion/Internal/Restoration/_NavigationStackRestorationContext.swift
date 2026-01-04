@@ -127,34 +127,48 @@ final class _NavigationStackRestorationContext {
         var elements: [SUINavigationPath.Element] = []
 
         for element in path.elements {
-            guard let registration = registry.registration(for: element.key) else {
-                policy.onFailure(.missingDestination(key: element.key))
+            guard let (controller, _) = buildViewController(for: element, navigator: navigator) else {
                 if policy.behavior == .clearAllAndShowRoot {
                     return ([], SUINavigationPath())
                 }
                 break
             }
 
-            do {
-                let view = try registration.buildViewFromPayload(element.payload, decoder)
-                let restorationInfo = _NavigationRestorationInfo(key: element.key, payload: element.payload)
-                let controller = navigator._makeHostingController(
-                    content: view,
-                    disableBackGesture: element.disableBackGesture,
-                    restorationInfo: restorationInfo
-                )
-                viewControllers.append(controller)
-                elements.append(element)
-            } catch {
-                policy.onFailure(.decodeFailed(key: element.key, errorDescription: String(describing: error)))
-                if policy.behavior == .clearAllAndShowRoot {
-                    return ([], SUINavigationPath())
-                }
-                break
-            }
+            viewControllers.append(controller)
+            elements.append(element)
         }
 
         return (viewControllers, SUINavigationPath(elements: elements))
+    }
+
+    /// Builds a single hosting controller for a path element and returns its default transition (if any).
+    ///
+    /// This helper is used both for full-stack restoration and for path-driven “push one element” updates,
+    /// so the decode/build logic stays centralized.
+    func buildViewController(
+        for element: SUINavigationPath.Element,
+        navigator: Navigator
+    ) -> (viewController: UIViewController, defaultTransition: SUINavigationTransition?)? {
+        guard let registration = registry.registration(for: element.key) else {
+            policy.onFailure(.missingDestination(key: element.key))
+            return nil
+        }
+
+        do {
+            let value = try registration.decodeValue(element.payload, decoder)
+            let view = registration.buildViewFromValue(value)
+            let defaultTransition = registration.defaultTransitionFromValue?(value)
+            let restorationInfo = _NavigationRestorationInfo(key: element.key, payload: element.payload)
+            let controller = navigator._makeHostingController(
+                content: view,
+                disableBackGesture: element.disableBackGesture,
+                restorationInfo: restorationInfo
+            )
+            return (controller, defaultTransition)
+        } catch {
+            policy.onFailure(.decodeFailed(key: element.key, errorDescription: String(describing: error)))
+            return nil
+        }
     }
 
     /// Derives the current `SUINavigationPath` from the UIKit stack.

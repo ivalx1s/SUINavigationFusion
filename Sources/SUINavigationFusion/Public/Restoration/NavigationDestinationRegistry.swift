@@ -12,8 +12,9 @@ public final class NavigationDestinationRegistry: NavigationDestinationRegisteri
     struct Registration {
         let key: NavigationDestinationKey
         let payloadTypeID: ObjectIdentifier
+        let decodeValue: (Data, JSONDecoder) throws -> Any
         let buildViewFromValue: (Any) -> AnyView
-        let buildViewFromPayload: (Data, JSONDecoder) throws -> AnyView
+        let defaultTransitionFromValue: ((Any) -> SUINavigationTransition?)?
     }
 
     private var registrationsByKey: [NavigationDestinationKey: Registration] = [:]
@@ -29,11 +30,14 @@ public final class NavigationDestinationRegistry: NavigationDestinationRegisteri
     ///   - type: The `Codable` payload type you will push via `navigator.push(route:)`.
     ///   - key: A stable identifier persisted in navigation snapshots. Prefer explicit, namespaced keys.
     ///   - aliases: Historical keys that should be treated as equivalent (useful when renaming keys).
+    ///   - defaultTransition: Optional per-destination default transition (e.g. iOS 18+ zoom).
+    ///     Used when no explicit transition is requested at the call site.
     ///   - destination: Builds the SwiftUI screen for the given payload.
     public func register<Item: NavigationPathItem, Screen: View>(
         _ type: Item.Type,
         key: NavigationDestinationKey,
         aliases: [NavigationDestinationKey] = [],
+        defaultTransition: ((Item) -> SUINavigationTransition?)? = nil,
         @ViewBuilder destination: @escaping (Item) -> Screen
     ) {
         // If the payload type declares a key, prefer keeping registration consistent with it.
@@ -47,12 +51,14 @@ public final class NavigationDestinationRegistry: NavigationDestinationRegisteri
         let registration = Registration(
             key: key,
             payloadTypeID: ObjectIdentifier(type),
+            decodeValue: { payload, decoder in
+                try decoder.decode(Item.self, from: payload)
+            },
             buildViewFromValue: { value in
                 AnyView(destination(value as! Item))
             },
-            buildViewFromPayload: { payload, decoder in
-                let value = try decoder.decode(Item.self, from: payload)
-                return AnyView(destination(value))
+            defaultTransitionFromValue: defaultTransition.map { callback in
+                { value in callback(value as! Item) }
             }
         )
 
@@ -68,9 +74,10 @@ public final class NavigationDestinationRegistry: NavigationDestinationRegisteri
     public func register<Item: NavigationPathItem, Screen: View>(
         _ type: Item.Type,
         aliases: [NavigationDestinationKey] = [],
+        defaultTransition: ((Item) -> SUINavigationTransition?)? = nil,
         @ViewBuilder destination: @escaping (Item) -> Screen
     ) {
-        register(type, key: Item.destinationKey, aliases: aliases, destination: destination)
+        register(type, key: Item.destinationKey, aliases: aliases, defaultTransition: defaultTransition, destination: destination)
     }
 
     func key<Item: NavigationPathItem>(for type: Item.Type) -> NavigationDestinationKey? {

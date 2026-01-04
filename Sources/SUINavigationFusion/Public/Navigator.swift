@@ -77,6 +77,12 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///
     /// Path-driven stacks must be route-only (every screen above root must be representable as a path element).
     var _pathDriver: _NavigationPathDriver?
+
+    /// Internal registry of UIKit views used as anchors for iOS 18+ native zoom transitions.
+    ///
+    /// SwiftUI code registers anchors via `.suinavZoomSource(id:)` / `.suinavZoomDestination(id:)`.
+    /// The library then resolves the actual `UIView` at transition time (push + pop) by id.
+    let _zoomViewRegistry = _NavigationZoomViewRegistry()
     
     // MARK: - Equatable
     
@@ -142,7 +148,11 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     
     // MARK: - Stack operations
 
-    private func mutatePath(animated: Bool, _ mutation: (inout SUINavigationPath) -> Void) {
+    private func mutatePath(
+        animated: Bool,
+        transition: SUINavigationTransition? = nil,
+        _ mutation: (inout SUINavigationPath) -> Void
+    ) {
         guard let driver = _pathDriver else { return }
         var path = driver.get()
         mutation(&path)
@@ -155,6 +165,9 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         } else {
             transaction.disablesAnimations = true
             transaction.animation = nil
+        }
+        if #available(iOS 17.0, *) {
+            transaction.suinavigationTransition = transition
         }
 
         withTransaction(transaction) {
@@ -188,7 +201,16 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///   - view: The SwiftUI `View` to push.
     ///   - animated: `true` to animate the transition (default), `false` for an
     ///     immediate push.
-    public func push<V: View>(_ view: V, animated: Bool = true, disableBackGesture: Bool = false) {
+    ///   - disableBackGesture: `true` to disable interactive back gestures for the pushed screen.
+    ///   - transition: Optional transition request (e.g. `.zoom(...)` on iOS 18+). Defaults to `nil` (system push).
+    ///
+    /// `transition` is applied only for imperative stacks. In path-driven navigation, this API is not supported.
+    public func push<V: View>(
+        _ view: V,
+        animated: Bool = true,
+        disableBackGesture: Bool = false,
+        transition: SUINavigationTransition? = nil
+    ) {
         if _pathDriver != nil {
             assertionFailure("Navigator.push(_:) is not supported in path-driven navigation. Use push(route:) or mutate the bound SUINavigationPath.")
             return
@@ -201,6 +223,9 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             restorationInfo: nil
         )
 
+        if animated {
+            _applyTransitionIfNeeded(transition, to: controller, disableBackGesture: disableBackGesture)
+        }
         navigationController.pushViewController(controller, animated: animated)
         navigationController.setNavigationBarHidden(true, animated: false)
         _restorationContext?.syncSnapshot(from: navigationController)
@@ -214,11 +239,18 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// - `TypedNavigationShell` (typed routing only)
     /// - `PathRestorableNavigationShell` / `RestorableNavigationShell` (typed routing + persistence)
     ///
+    /// - Parameters:
+    ///   - route: The serializable route payload to push.
+    ///   - animated: Whether to animate the push.
+    ///   - disableBackGesture: Whether to disable interactive back gestures for the pushed screen.
+    ///   - transition: Optional transition request (e.g. `.zoom(...)` on iOS 18+). Defaults to `nil` (system push).
+    ///
     /// If the navigator is not hosted by a typed/restorable shell, this call asserts in debug builds and no-ops.
     public func push<Route: NavigationPathItem>(
         route: Route,
         animated: Bool = true,
-        disableBackGesture: Bool = false
+        disableBackGesture: Bool = false,
+        transition: SUINavigationTransition? = nil
     ) {
         guard let registry = _routingRegistry else {
             assertionFailure("Navigator.push(route:) requires a typed navigation shell (TypedNavigationShell / PathRestorableNavigationShell / RestorableNavigationShell).")
@@ -242,7 +274,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         if let driver = _pathDriver {
             do {
                 let payload = try driver.encoder.encode(route)
-                mutatePath(animated: animated) { path in
+                mutatePath(animated: animated, transition: transition) { path in
                     path.append(.init(key: key, payload: payload, disableBackGesture: disableBackGesture))
                 }
             } catch {
@@ -254,6 +286,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         guard let navigationController = currentNavigationController() else { return }
 
         let view = registration.buildViewFromValue(route)
+        let effectiveTransition = transition ?? registration.defaultTransitionFromValue?(route)
 
         let restorationInfo: _NavigationRestorationInfo?
         if let restorationContext = _restorationContext {
@@ -274,6 +307,9 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             restorationInfo: restorationInfo
         )
 
+        if animated {
+            _applyTransitionIfNeeded(effectiveTransition, to: controller, disableBackGesture: disableBackGesture)
+        }
         navigationController.pushViewController(controller, animated: animated)
         navigationController.setNavigationBarHidden(true, animated: false)
         _restorationContext?.syncSnapshot(from: navigationController)
@@ -348,4 +384,53 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         _restorationContext?.syncSnapshot(from: navigationController)
     }
     
+    // MARK: - Transitions
+
+    /// Applies a navigation transition request to a UIKit view controller, if supported.
+    ///
+    /// For iOS 18+ zoom transitions, UIKit requires the *destination* controller to provide:
+    /// - a `preferredTransition` configured as `.zoom(...)`
+    /// - a `sourceViewProvider` closure that resolves the source view on demand (UIKit calls it for push and pop)
+    ///
+    /// For all other cases (unsupported OS, missing anchors, `.standard`), this method is a no-op.
+    func _applyTransitionIfNeeded(
+        _ transition: SUINavigationTransition?,
+        to controller: UIViewController,
+        disableBackGesture: Bool
+    ) {
+        #if canImport(UIKit)
+        guard let transition else { return }
+        guard case .zoom(let zoom) = transition else { return }
+        guard #available(iOS 18.0, *) else { return }
+
+        // Avoid surprising “zoom from center” by requiring the source view to exist at push time.
+        guard _zoomViewRegistry.sourceView(for: zoom.sourceID) != nil else { return }
+
+        var options = UIViewController.Transition.ZoomOptions()
+
+        // Keep the library’s “no interactive back” contract consistent:
+        // - `disableBackGesture` disables edge-swipe back
+        // - the same flag also disables zoom’s interactive dismiss gestures unless explicitly allowed.
+        if disableBackGesture || zoom.interactiveDismiss == .disabled {
+            options.interactiveDismissShouldBegin = { _ in false }
+        }
+
+        if let destinationID = zoom.destinationID {
+            options.alignmentRectProvider = { [weak self] context in
+                guard let self else { return context.zoomedViewController.view.bounds }
+                guard let destinationView = self._zoomViewRegistry.destinationView(for: destinationID) else {
+                    return context.zoomedViewController.view.bounds
+                }
+
+                // Convert the destination “hero” rect into the zoomed controller’s coordinate space.
+                return destinationView.convert(destinationView.bounds, to: context.zoomedViewController.view)
+            }
+        }
+
+        controller.preferredTransition = .zoom(options: options) { [weak self] _ in
+            self?._zoomViewRegistry.sourceView(for: zoom.sourceID)
+        }
+        #endif
+    }
+
 }

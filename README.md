@@ -3,9 +3,10 @@
 A SwiftUI-first navigation core with a customizable top bar and a thin UIKit bridge.
 It hides UINavigationBar, drives your own top bar via environment, and exposes a tiny Navigator API for push/pop.
 
-Requirements
-	•	iOS 15+
-	•	Swift 5.10+ (supports Swift 6 strict concurrency)
+## Requirements
+
+- iOS 15+
+- Swift 5.10+ (supports Swift 6 strict concurrency)
 
 ## Installation
 
@@ -72,13 +73,14 @@ struct ThreadScreen: View {
 }
 ```
 
-## API surface:
-	•	push(_ view:animated: Bool = true, disableBackGesture: Bool = false)
-	•	push(route:animated: Bool = true, disableBackGesture: Bool = false) // route must be `NavigationPathItem`
-	•	pop() / popNonAnimated()
-	•	popToRoot(animated: Bool = true)
-	•	pop(levels: Int, animated: Bool = true)
-	•	clearCachedStack()
+## API surface
+
+- `push(_:animated:disableBackGesture:transition:)`
+- `push(route:animated:disableBackGesture:transition:)` (route must be `NavigationPathItem`)
+- `pop()` / `popNonAnimated()`
+- `popToRoot(animated:)`
+- `pop(levels:animated:)`
+- `clearCachedStack()`
 
 ## Typed route navigation (registry)
 
@@ -339,6 +341,74 @@ withTransaction(transaction) {
 }
 ```
 
+## Zoom transitions (iOS 18+)
+
+SUINavigationFusion supports the native iOS 18+ **zoom** navigation transition (the same system transition used by
+Photos-style UIs). Under the hood, this is implemented via UIKit by configuring the destination view controller’s
+`preferredTransition`.
+
+### How to use
+
+1) Mark the source view (e.g. a thumbnail) on the **current** screen:
+
+```swift
+Thumbnail(photo: photo)
+    .suinavZoomSource(id: photo.id)
+```
+
+2) (Optional but recommended) mark the hero view on the **destination** screen:
+
+```swift
+Image(uiImage: photo.image)
+    .resizable()
+    .scaledToFit()
+    .suinavZoomDestination(id: photo.id)
+```
+
+3) Request the transition when pushing:
+
+```swift
+navigator.push(
+    route: PhotoRoute(id: photo.id),
+    transition: .zoom(id: photo.id)
+)
+```
+
+### Path-driven / external router control
+
+In path-driven navigation, `navigator.push(route:transition:)` works the same way: it mutates the bound path and the
+shell applies the requested transition when reconciling the UIKit stack.
+
+If your router mutates the path directly, you can request a transition via a transaction (iOS 17+):
+
+```swift
+withSUINavigationTransition(.zoom(id: photo.id)) {
+    router.path.append(route: PhotoRoute(id: photo.id))
+}
+```
+
+### Default transitions via registry
+
+You can provide a default transition while registering a destination. This is used when no explicit transition is
+requested at the call site:
+
+```swift
+registry.register(PhotoRoute.self, defaultTransition: { route in
+    .zoom(id: route.id)
+}) { route in
+    PhotoDetailScreen(id: route.id)
+}
+```
+
+### Limitations and best practices
+
+- Zoom transitions require iOS 18+ at runtime. On older OS versions, the library falls back to the standard push/pop.
+- If multiple views register the same id at the same time, the last writer wins.
+- If the source view is not available when popping back (e.g. scrolled offscreen), UIKit may fall back to a default
+  animation.
+- If you push a screen with `disableBackGesture: true`, SUINavigationFusion also disables zoom’s interactive dismiss
+  gestures by default to keep the “no interactive back” contract consistent.
+
 ## Title & subtitle
 
 Use plain strings: .topNavigationBarTitle("Title"), .topNavigationBarSubtitle("Subtitle") or provide fully styled Text (overrides config fonts/colors):
@@ -478,9 +548,9 @@ public struct AppNavigationShell<Root: View>: View {
 .topNavigationBarTrailingPrimary { Button { } label: { Image(systemName: "ellipsis.circle") } }
 
 ## Back button
-	•	Hidden automatically on the root screen.
-	•	Per-screen control: .topNavigationBarHidesBackButton(true)
-	•	Disable the interactive back swipe per push:
+- Hidden automatically on the root screen.
+- Per-screen control: `.topNavigationBarHidesBackButton(true)`
+- Disable the interactive back swipe per push:
 
 `navigator.push(Screen(), disableBackGesture: true)`
 
@@ -549,6 +619,13 @@ SUINavigationFusion is a SwiftUI-first façade over a UIKit `UINavigationControl
   - Use SwiftUI transactions to control animation for path mutations:
     - default: animate
     - disable: `withTransaction(Transaction(disablesAnimations: true)) { ... }`
+
+- **Zoom transitions (iOS 18+)**
+  - For single-step pushes, the library can configure the destination view controller’s `preferredTransition` as a
+    native `.zoom(...)` transition.
+  - SwiftUI code provides UIKit anchor views via `.suinavZoomSource(id:)` / `.suinavZoomDestination(id:)`.
+  - In path-driven mode, the transition request can be provided via `navigator.push(route:transition:)` or via a
+    transaction using `withSUINavigationTransition(...)` (iOS 17+).
 
 
 ## Sample app

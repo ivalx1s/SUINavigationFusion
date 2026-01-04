@@ -517,9 +517,20 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                    Array(desiredElements.prefix(currentElements.count)) == currentElements,
                    let element = desiredElements.last {
                     // Push one element.
-                    let singlePath = SUINavigationPath(elements: [element])
-                    let (controllers, _) = restorationContext.buildViewControllers(for: singlePath, navigator: navigator)
-                    if let controller = controllers.first {
+                    let requestedTransition: SUINavigationTransition?
+                    if #available(iOS 17.0, *) {
+                        requestedTransition = context.transaction.suinavigationTransition
+                    } else {
+                        requestedTransition = nil
+                    }
+                    if let (controller, defaultTransition) = restorationContext.buildViewController(for: element, navigator: navigator) {
+                        if shouldAnimate {
+                            navigator._applyTransitionIfNeeded(
+                                requestedTransition ?? defaultTransition,
+                                to: controller,
+                                disableBackGesture: element.disableBackGesture
+                            )
+                        }
                         navigationController.pushViewController(controller, animated: shouldAnimate)
                     } else {
                         // If the appended element cannot be built (missing destination, decode failure, etc.),
