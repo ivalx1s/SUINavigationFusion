@@ -123,7 +123,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         private var pendingPathUpdate: SUINavigationPath?
         private var pendingPathUpdateTask: Task<Void, Never>?
         private var transitionStartBoundPath: SUINavigationPath?
-        fileprivate var isTransitionInFlight: Bool = false
+        private var transitionWasInteractive: Bool = false
 
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
@@ -142,7 +142,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             guard let transitionContext = navigationController.transitionCoordinator else { return }
             transitionCoordinator = transitionContext
             transitionStartBoundPath = pathDriver?.get()
-            isTransitionInFlight = true
+            transitionWasInteractive = transitionContext.isInteractive
             
             transitionStartTime      = CACurrentMediaTime()
             transitionDuration       = transitionContext.transitionDuration
@@ -174,6 +174,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                     let pathDriver = self.pathDriver,
                     self.restorationContext != nil,
                     !self.isApplyingPath,
+                    self.transitionWasInteractive,
                     !self.isPushTransition,
                     let startBoundPath = self.transitionStartBoundPath
                 else { return }
@@ -216,12 +217,6 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             transitionContext.animate(alongsideTransition: nil) { [weak self] context in
                 self?.clamp(cancelled: context.isCancelled)
                 self?.stopDisplayLink()
-                self?.transitionCoordinator = nil
-                self?.isTransitionInFlight = false
-
-                // If path reconciliation was deferred while UIKit was transitioning, re-emit the desired path now.
-                // This triggers a SwiftUI update *after* UIKit finished the transition, allowing safe reconciliation.
-                self?.flushPendingReconcileIfNeeded()
             }
         }
 
@@ -232,8 +227,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         ) {
             let startBoundPath = transitionStartBoundPath
             transitionStartBoundPath = nil
-            isTransitionInFlight = false
-            transitionCoordinator = nil
+            transitionWasInteractive = false
             guard !isRestoring, let navigationController = navigationController as? NCUINavigationController else { return }
             guard let restorationContext else { return }
 
@@ -255,26 +249,15 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 }
             }
 
-            // `pendingReconcile` is flushed in the transition completion callback. Keep `didShow` focused on
-            // syncing the authoritative UIKit stack back into the bound path.
-        }
-
-        /// Re-emits a deferred desired path after UIKit finishes the current transition.
-        ///
-        /// Path-driven navigation must avoid UIKit re-entrancy: reconciling while a transition is in-flight can
-        /// corrupt the stack. `_NavigationRoot.updateUIViewController` stashes the desired path when that happens.
-        ///
-        /// This method applies the stashed desired path once the transition completes, but only if it is still the
-        /// router’s current intent (compare-and-swap). This prevents resurrecting stale paths after gesture-driven pops.
-        private func flushPendingReconcileIfNeeded() {
-            guard let pathDriver, let pendingReconcile else { return }
-            self.pendingReconcile = nil
-
-            // Only re-emit if the router didn’t change the path while UIKit was transitioning.
-            guard pathDriver.get() == pendingReconcile.desiredPath else { return }
-            Task { @MainActor in
-                // Defer to escape any SwiftUI view update triggered by UIKit transition callbacks.
-                await Task.yield()
+            // If reconciliation was deferred while UIKit was transitioning, re-emit the desired path now.
+            // This triggers a new SwiftUI update *after* the transition, allowing `_NavigationRoot.updateUIViewController`
+            // to reconcile safely with the captured animation/transition intent.
+            if let pendingReconcile {
+                self.pendingReconcile = nil
+                // Only re-emit the desired path if it is still the router’s current intent.
+                // If UIKit (gesture-driven navigation) already synced the bound path to match the actual stack,
+                // do not resurrect a stale pre-transition desired path (that can cause “auto-push back” bugs).
+                guard pathDriver.get() == pendingReconcile.desiredPath else { return }
 
                 var transaction = Transaction()
                 transaction.disablesAnimations = pendingReconcile.disablesAnimations
@@ -613,8 +596,8 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 // corrupt the stack and break animations. This is especially noticeable for iOS 18+ zoom
                 // interactive dismiss, where the completion phase can be relatively long.
                 //
-                // If UIKit is currently transitioning, stash the desired path and apply it once the transition finishes.
-                if context.coordinator.isTransitionInFlight {
+                // If UIKit is currently transitioning, stash the desired path and apply it once `didShow` fires.
+                if navigationController.transitionCoordinator != nil {
                     let requestedTransition: SUINavigationTransition?
                     if #available(iOS 17.0, *) {
                         requestedTransition = context.transaction.suinavigationTransition
