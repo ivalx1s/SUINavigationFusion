@@ -146,11 +146,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                let to   = transitionContext.viewController(forKey: .to)   as? NavigationTransitionProgressHolder {
                 
                 if isPushTransition {
-                    from.navigationPageTransitionProgress.progress = 0        // fully visible
-                    to.navigationPageTransitionProgress.progress   = 0.3      // start slightly visible
+                    from.navigationPageTransitionProgress.setProgress(0)        // fully visible
+                    to.navigationPageTransitionProgress.setProgress(0.3)      // start slightly visible
                 } else {
-                    from.navigationPageTransitionProgress.progress = 0.7      // almost faded
-                    to.navigationPageTransitionProgress.progress   = 0        // visible
+                    from.navigationPageTransitionProgress.setProgress(0.7)      // almost faded
+                    to.navigationPageTransitionProgress.setProgress(0)        // visible
                 }
             }
             
@@ -255,15 +255,15 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                let to   = coordinatorContext.viewController(forKey: .to)   as? NavigationTransitionProgressHolder {
                 
                 if isPushTransition {
-                    from.navigationPageTransitionProgress.progress = clampedProgress
-                    to.navigationPageTransitionProgress.progress   = max(0, 0.3 - 0.3 * clampedProgress)
+                    from.navigationPageTransitionProgress.setProgress(clampedProgress)
+                    to.navigationPageTransitionProgress.setProgress(max(0, 0.3 - 0.3 * clampedProgress))
                 } else {
-                    from.navigationPageTransitionProgress.progress = min(1, 0.7 + 0.3 * clampedProgress)
-                    to.navigationPageTransitionProgress.progress   = 0
+                    from.navigationPageTransitionProgress.setProgress(min(1, 0.7 + 0.3 * clampedProgress))
+                    to.navigationPageTransitionProgress.setProgress(0)
                 }
             }
             
-            progress.progress = clampedProgress
+            progress.setProgress(clampedProgress)
         }
         
         private func clamp(cancelled: Bool) {
@@ -271,12 +271,12 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             if let from = coordinator.viewController(forKey: .from) as? NavigationTransitionProgressHolder,
                let to   = coordinator.viewController(forKey: .to)   as? NavigationTransitionProgressHolder {
                 if cancelled {                    // Return to fully‑visible source bar and hide the destination bar.
-                    from.navigationPageTransitionProgress.progress = 0   // visible
-                    to.navigationPageTransitionProgress.progress   = 1   // hidden
+                    from.navigationPageTransitionProgress.setProgress(0)   // visible
+                    to.navigationPageTransitionProgress.setProgress(1)   // hidden
                 } else {
                     // Normal completion.
-                    from.navigationPageTransitionProgress.progress = 1   // hidden
-                    to.navigationPageTransitionProgress.progress   = 0   // visible
+                    from.navigationPageTransitionProgress.setProgress(1)   // hidden
+                    to.navigationPageTransitionProgress.setProgress(0)   // visible
                 }
             }
         }
