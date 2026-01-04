@@ -123,6 +123,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         private var pendingPathUpdate: SUINavigationPath?
         private var pendingPathUpdateTask: Task<Void, Never>?
         private var transitionStartBoundPath: SUINavigationPath?
+        private var transitionWasInteractive: Bool = false
 
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
@@ -141,6 +142,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             guard let transitionContext = navigationController.transitionCoordinator else { return }
             transitionCoordinator = transitionContext
             transitionStartBoundPath = pathDriver?.get()
+            transitionWasInteractive = transitionContext.isInteractive
             
             transitionStartTime      = CACurrentMediaTime()
             transitionDuration       = transitionContext.transitionDuration
@@ -172,7 +174,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                     let pathDriver = self.pathDriver,
                     self.restorationContext != nil,
                     !self.isApplyingPath,
-                    context.isInteractive,
+                    self.transitionWasInteractive,
                     !self.isPushTransition,
                     let startBoundPath = self.transitionStartBoundPath
                 else { return }
@@ -180,10 +182,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 // Only apply if the router hasn’t already changed the path during the gesture.
                 if pathDriver.get() != startBoundPath { return }
 
+                // If the interaction was cancelled, UIKit will stay on the same screen, so there is nothing to sync.
+                guard context.isCancelled == false else { return }
+
                 var expected = startBoundPath
-                if context.isCancelled == false {
-                    expected.removeLast(1)
-                }
+                expected.removeLast(1)
                 self.scheduleBoundPathUpdate(expected)
             }
             
@@ -224,6 +227,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         ) {
             let startBoundPath = transitionStartBoundPath
             transitionStartBoundPath = nil
+            transitionWasInteractive = false
             guard !isRestoring, let navigationController = navigationController as? NCUINavigationController else { return }
             guard let restorationContext else { return }
 
@@ -250,6 +254,10 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             // to reconcile safely with the captured animation/transition intent.
             if let pendingReconcile {
                 self.pendingReconcile = nil
+                // Only re-emit the desired path if it is still the router’s current intent.
+                // If UIKit (gesture-driven navigation) already synced the bound path to match the actual stack,
+                // do not resurrect a stale pre-transition desired path (that can cause “auto-push back” bugs).
+                guard pathDriver.get() == pendingReconcile.desiredPath else { return }
 
                 var transaction = Transaction()
                 transaction.disablesAnimations = pendingReconcile.disablesAnimations
