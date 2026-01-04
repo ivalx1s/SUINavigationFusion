@@ -97,6 +97,8 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         var isRestoring: Bool = false
         var isApplyingPath: Bool = false
         var pathDriver: _NavigationPathDriver?
+        private var pendingPathUpdate: SUINavigationPath?
+        private var pendingPathUpdateTask: Task<Void, Never>?
 
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
@@ -179,6 +181,32 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             transaction.disablesAnimations = true
             withTransaction(transaction) {
                 pathDriver.set(path, false)
+            }
+        }
+
+        /// Updates the bound `SUINavigationPath` on the next run loop tick.
+        ///
+        /// Calling `pathDriver.set(...)` synchronously from within `updateUIViewController` can trigger:
+        /// "Publishing changes from within view updates is not allowed".
+        /// Deferring the write keeps SwiftUI’s update cycle stable.
+        @MainActor
+        func scheduleBoundPathUpdate(_ path: SUINavigationPath) {
+            guard pathDriver != nil else { return }
+            pendingPathUpdate = path
+
+            pendingPathUpdateTask?.cancel()
+            pendingPathUpdateTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                guard let pathDriver = self.pathDriver, let pendingPathUpdate = self.pendingPathUpdate else { return }
+                self.pendingPathUpdate = nil
+
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    pathDriver.set(pendingPathUpdate, false)
+                }
             }
         }
         
@@ -339,21 +367,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         restorationContext.syncSnapshot(from: navigationController)
 
                         if sanitizedPath != desiredPath {
-                            var transaction = Transaction()
-                            transaction.disablesAnimations = true
-                            withTransaction(transaction) {
-                                pathDriver.set(sanitizedPath, false)
-                            }
+                            context.coordinator.scheduleBoundPathUpdate(sanitizedPath)
                         }
                     }
 
                     let (currentPath, _) = restorationContext.currentPath(from: navigationController)
                     if currentPath != desiredPath {
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            pathDriver.set(currentPath, false)
-                        }
+                        context.coordinator.scheduleBoundPathUpdate(currentPath)
                     }
 
                     context.coordinator.isApplyingPath = false
@@ -422,21 +442,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         restorationContext.syncSnapshot(from: navigationController)
 
                         if sanitizedPath != desiredPath {
-                            var transaction = Transaction()
-                            transaction.disablesAnimations = true
-                            withTransaction(transaction) {
-                                pathDriver.set(sanitizedPath, false)
-                            }
+                            context.coordinator.scheduleBoundPathUpdate(sanitizedPath)
                         }
                     }
 
                     let (currentPath, _) = restorationContext.currentPath(from: navigationController)
                     if currentPath != desiredPath {
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            pathDriver.set(currentPath, false)
-                        }
+                        context.coordinator.scheduleBoundPathUpdate(currentPath)
                     }
 
                     context.coordinator.isApplyingPath = false
@@ -484,7 +496,12 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         if let pathDriver, let restorationContext, !context.coordinator.isRestoring {
             let desiredRaw = pathDriver.get()
             let desiredPath = (desiredRaw.schemaVersion == 1) ? desiredRaw : SUINavigationPath()
-            let shouldAnimate = (context.transaction.animation != nil) && !context.transaction.disablesAnimations
+            // SwiftUI’s `NavigationStack(path:)` animates path-driven push/pop by default.
+            //
+            // We mirror that behavior by animating unless animations are explicitly disabled for this update.
+            // To disable animations from an external router (e.g. deep links), wrap the path mutation in:
+            // `withTransaction(Transaction(disablesAnimations: true)) { ... }`.
+            let shouldAnimate = !context.transaction.disablesAnimations
 
             let (currentPath, isFullyRepresentable) = restorationContext.currentPath(from: navigationController)
 
@@ -506,9 +523,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         navigationController.pushViewController(controller, animated: shouldAnimate)
                     } else {
                         // If the appended element cannot be built (missing destination, decode failure, etc.),
-                        // fall back to a full rebuild to respect the restore policy (e.g. `.clearAllAndShowRoot`).
-                        let (rebuiltControllers, _) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
-                        navigationController.setViewControllers([hosting] + rebuiltControllers, animated: false)
+                        // keep the current UIKit stack and only normalize the bound path according to policy:
+                        // - `.dropSuffixAndContinue`: drop the invalid suffix (no UIKit changes)
+                        // - `.clearAllAndShowRoot`: pop to root (clear stack)
+                        let (_, sanitizedPath) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
+                        if sanitizedPath.elements.isEmpty && !currentElements.isEmpty {
+                            navigationController.popToRootViewController(animated: false)
+                        }
                     }
                 } else if isFullyRepresentable,
                           currentElements.count == desiredElements.count + 1,
@@ -538,14 +559,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 
                 navigationController.setNavigationBarHidden(true, animated: false)
 
-                // Persist and normalize the bound path to match the actual UIKit stack (policy may drop invalid suffix).
+                // Persist and (asynchronously) normalize the bound path to match the actual UIKit stack
+                // (policy may drop invalid suffix).
                 let (actualPath, _) = restorationContext.syncSnapshot(from: navigationController)
                 if actualPath != desiredRaw {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        pathDriver.set(actualPath, false)
-                    }
+                    context.coordinator.scheduleBoundPathUpdate(actualPath)
                 }
             }
         }
