@@ -41,6 +41,12 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///
     /// Non-`nil` only when the navigator is hosted by `PathRestorableNavigationShell` / `RestorableNavigationShell`.
     var _restorationContext: _NavigationStackRestorationContext?
+
+    /// Internal routing registry installed by typed/restorable shells.
+    ///
+    /// Non-`nil` when the navigator is hosted by `TypedNavigationShell`,
+    /// `PathRestorableNavigationShell`, or `RestorableNavigationShell`.
+    var _routingRegistry: NavigationDestinationRegistry?
     
     // MARK: - Equatable
     
@@ -148,27 +154,28 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
 
     /// Pushes a serializable route onto the navigation stack.
     ///
-    /// Route-based pushes can participate in navigation stack caching/restoration when the stack
-    /// is hosted by `PathRestorableNavigationShell` / `RestorableNavigationShell`.
+    /// Route-based pushes require a typed destination registry, installed by:
+    /// - `TypedNavigationShell` (typed routing only)
+    /// - `PathRestorableNavigationShell` / `RestorableNavigationShell` (typed routing + persistence)
     ///
-    /// If the navigator is not hosted by a restorable shell, this call asserts in debug builds and no-ops.
+    /// If the navigator is not hosted by a typed/restorable shell, this call asserts in debug builds and no-ops.
     public func push<Route: NavigationRoute>(
         route: Route,
         animated: Bool = true,
         disableBackGesture: Bool = false
     ) {
         guard let navigationController = currentNavigationController() else { return }
-        guard let restorationContext = _restorationContext else {
-            assertionFailure("Navigator.push(route:) requires a restorable navigation shell.")
+        guard let registry = _routingRegistry else {
+            assertionFailure("Navigator.push(route:) requires a typed navigation shell (TypedNavigationShell / PathRestorableNavigationShell / RestorableNavigationShell).")
             return
         }
 
-        guard let key = restorationContext.registry.key(for: Route.self) else {
+        guard let key = registry.key(for: Route.self) else {
             assertionFailure("No destination registered for route type: \(Route.self).")
             return
         }
 
-        guard let registration = restorationContext.registry.registration(for: key) else {
+        guard let registration = registry.registration(for: key) else {
             assertionFailure("No destination registered for key: \(key.rawValue).")
             return
         }
@@ -177,16 +184,20 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             return
         }
 
-        let payload: Data
-        do {
-            payload = try restorationContext.encoder.encode(route)
-        } catch {
-            assertionFailure("Failed to encode route payload: \(error).")
-            return
-        }
-
         let view = registration.buildViewFromValue(route)
-        let restorationInfo = _NavigationRestorationInfo(key: key, payload: payload)
+
+        let restorationInfo: _NavigationRestorationInfo?
+        if let restorationContext = _restorationContext {
+            do {
+                let payload = try restorationContext.encoder.encode(route)
+                restorationInfo = _NavigationRestorationInfo(key: key, payload: payload)
+            } catch {
+                assertionFailure("Failed to encode route payload for restoration: \(error).")
+                return
+            }
+        } else {
+            restorationInfo = nil
+        }
 
         let controller = _makeHostingController(
             content: view,
@@ -196,7 +207,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
 
         navigationController.pushViewController(controller, animated: animated)
         navigationController.setNavigationBarHidden(true, animated: false)
-        restorationContext.syncSnapshot(from: navigationController)
+        _restorationContext?.syncSnapshot(from: navigationController)
     }
 
     /// Clears cached/restorable navigation state for the current navigation shell (no-op otherwise).

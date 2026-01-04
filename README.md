@@ -80,6 +80,38 @@ struct ThreadScreen: View {
 	•	pop(levels: Int, animated: Bool = true)
 	•	clearCachedStack()
 
+## Typed route navigation (registry)
+
+`Navigator.push(route:)` requires a typed destination registry installed by one of:
+
+- `TypedNavigationShell` (typed routing only)
+- `PathRestorableNavigationShell` / `RestorableNavigationShell` (typed routing + persistence)
+
+Feature modules can decouple from a concrete stack by exporting a `NavigationDestinations` bundle:
+
+```swift
+// Feature module
+public enum ThreadFeatureNavigation {
+    public static let destinations = NavigationDestinations { registry in
+        registry.register(ThreadRoute.self, key: "com.myapp.thread") { route in
+            ThreadScreen(id: route.id)
+        }
+    }
+}
+```
+
+Compose bundles at the app root:
+
+```swift
+let destinations = ThreadFeatureNavigation.destinations
+    .merging(SettingsFeatureNavigation.destinations)
+
+TypedNavigationShell(
+    destinations: destinations,
+    root: { _ in InboxScreen() }
+)
+```
+
 ## Navigation stack restoration (state caching)
 
 `Navigator.push(_ view:)` accepts arbitrary SwiftUI views, which are not serializable. If you want navigation stack
@@ -117,6 +149,7 @@ RestorableNavigationShell<AppRoute>(
     key: "com.myapp.mainRoute",
     aliases: [.type(AppRoute.self)], // optional: keep if you previously shipped the default key
     configuration: .defaultMaterial,
+    additionalDestinations: ThreadFeatureNavigation.destinations, // optional
     root: { _ in InboxScreen() },
     destination: { route in
         switch route {
@@ -143,20 +176,14 @@ struct SettingsRoute: NavigationRoute { init() {} }
 
 PathRestorableNavigationShell(
     id: "mainStack",
-    destinations: { registry in
-        registry.register(ThreadRoute.self, key: "com.myapp.thread") { route in
-            ThreadScreen(id: route.id)
-        }
-        registry.register(SettingsRoute.self, key: "com.myapp.settings") { _ in
-            SettingsScreen()
-        }
-    },
+    destinations: ThreadFeatureNavigation.destinations
+        .merging(SettingsFeatureNavigation.destinations),
     root: { _ in InboxScreen() }
 )
 ```
 
-`destinations` is a configuration closure: it is called once to register all destinations for this stack by mutating the
-provided registry via `registry.register(...)` (avoid side effects).
+`destinations` is applied once to register all destinations for this stack by mutating the registry via
+`registry.register(...)` (avoid side effects).
 
 Push a payload type:
 

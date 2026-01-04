@@ -52,28 +52,33 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
        for the currently visible screen as well as any pushed screens.
      */
     private let configuration: TopNavigationBarConfiguration
+    private let routingRegistry: NavigationDestinationRegistry?
     private let restorationContext: _NavigationStackRestorationContext?
     
     init(
         configuration: TopNavigationBarConfiguration,
+        routingRegistry: NavigationDestinationRegistry? = nil,
         restorationContext: _NavigationStackRestorationContext? = nil,
         @ViewBuilder root: @escaping (Navigator) -> Root
     ) {
         self.navigator = nil
         self.rootBuilder = root
         self.configuration = configuration
+        self.routingRegistry = routingRegistry
         self.restorationContext = restorationContext
     }
     
     init(
         navigator: Navigator,
         configuration: TopNavigationBarConfiguration,
+        routingRegistry: NavigationDestinationRegistry? = nil,
         restorationContext: _NavigationStackRestorationContext? = nil,
         @ViewBuilder root: @escaping () -> Root
     ) {
         self.navigator = navigator
         self.rootBuilder = { _ in root() }
         self.configuration = configuration
+        self.routingRegistry = routingRegistry
         self.restorationContext = restorationContext
     }
     
@@ -259,6 +264,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIViewController {
+        let effectiveRoutingRegistry = routingRegistry ?? restorationContext?.registry
         if let externalNavigator = navigator {
             let resolvedNavigationController = externalNavigator.resolveNavigationController()
             let navigationController = resolvedNavigationController ?? NCUINavigationController()
@@ -274,6 +280,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             externalNavigator.navigationPageTransitionProgress = transitionProgress
             externalNavigator.topNavigationBarConfigurationStore.setConfiguration(configuration)
             externalNavigator._restorationContext = restorationContext
+            externalNavigator._routingRegistry = effectiveRoutingRegistry
             let rootController = makeRootViewController(
                 for: externalNavigator,
                 progress: transitionProgress
@@ -307,6 +314,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             autoInjectedNavigator.navigationPageTransitionProgress = transitionProgress
             autoInjectedNavigator.topNavigationBarConfigurationStore.setConfiguration(configuration)
             autoInjectedNavigator._restorationContext = restorationContext
+            autoInjectedNavigator._routingRegistry = effectiveRoutingRegistry
             let rootController = makeRootViewController(
                 for: autoInjectedNavigator,
                 progress: transitionProgress
@@ -338,6 +346,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 
         let progress = context.coordinator.progress
         navigator.navigationPageTransitionProgress = progress
+        navigator._routingRegistry = routingRegistry ?? restorationContext?.registry
         // NOTE:
         // `TopNavigationBarConfigurationStore` is an `ObservableObject` (via `@Published configuration`).
         // Publishing changes synchronously from inside `updateUIViewController` triggers:
