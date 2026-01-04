@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// Register destinations once at the root of a restorable navigation shell.
 @MainActor
-public final class NavigationDestinationRegistry {
+public final class NavigationDestinationRegistry: NavigationDestinationRegistering {
     struct Registration {
         let key: NavigationDestinationKey
         let payloadTypeID: ObjectIdentifier

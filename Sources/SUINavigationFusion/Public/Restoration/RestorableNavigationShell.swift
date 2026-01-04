@@ -17,6 +17,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
     private let policy: NavigationRestorePolicy
     private let key: NavigationDestinationKey
     private let aliases: [NavigationDestinationKey]
+    private let additionalDestinations: NavigationDestinations
     private let rootBuilder: (Navigator) -> AnyView
     private let destinationBuilder: (Route) -> AnyView
 
@@ -33,6 +34,9 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
     ///   - policy: Failure policy for missing destinations or decode failures.
     ///   - key: Stable destination key for the single `Route` type (persisted in snapshots).
     ///   - aliases: Historical keys that should be treated as equivalent (useful when renaming keys).
+    ///   - additionalDestinations: Extra typed destinations to register into the same stack.
+    ///     Use this to keep Option 3 ergonomics (an exhaustive `switch` over `Route`) while allowing feature modules
+    ///     to register their own typed routes for this stack.
     ///   - root: Root screen builder (not persisted).
     ///   - destination: Builds screens for route values.
     public init<Root: View, Destination: View>(
@@ -46,6 +50,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
         policy: NavigationRestorePolicy = .init(),
         key: NavigationDestinationKey = .type(Route.self),
         aliases: [NavigationDestinationKey] = [],
+        additionalDestinations: NavigationDestinations = .empty,
         @ViewBuilder root: @escaping (Navigator) -> Root,
         @ViewBuilder destination: @escaping (Route) -> Destination
     ) {
@@ -59,6 +64,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
         self.policy = policy
         self.key = key
         self.aliases = aliases
+        self.additionalDestinations = additionalDestinations
         self.rootBuilder = { navigator in AnyView(root(navigator)) }
         self.destinationBuilder = { route in AnyView(destination(route)) }
     }
@@ -77,6 +83,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
                 registry.register(Route.self, key: key, aliases: aliases) { route in
                     destinationBuilder(route)
                 }
+                additionalDestinations.register(into: registry)
             },
             root: rootBuilder
         )

@@ -17,7 +17,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let policy: NavigationRestorePolicy
-    private let destinations: (NavigationDestinationRegistry) -> Void
+    private let destinations: NavigationDestinations
     private let rootBuilder: (Navigator) -> Root
 
     /// A stable per-scene identifier used when `idScope == .scene`.
@@ -36,10 +36,9 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     ///   - encoder: Encoder used to serialize route payloads and snapshots.
     ///   - decoder: Decoder used to deserialize route payloads and snapshots.
     ///   - policy: Failure policy for missing destinations or decode failures.
-    ///   - destinations: A registry configuration closure used to register all restorable destinations for this stack.
-    ///     The closure is called once when the shell’s restoration state is created and is expected to be deterministic
-    ///     (avoid side effects). It returns `Void` because its purpose is to mutate the provided registry via
-    ///     `registry.register(...)`.
+    ///   - destinations: A composable bundle of destination registrations for this stack.
+    ///     The bundle is applied once when the shell’s restoration state is created and is expected to be deterministic
+    ///     (avoid side effects). It ultimately registers destinations by mutating a registry via `registry.register(...)`.
     ///   - root: Root screen builder (not persisted).
     public init(
         id: String,
@@ -50,7 +49,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
         encoder: JSONEncoder = .init(),
         decoder: JSONDecoder = .init(),
         policy: NavigationRestorePolicy = .init(),
-        destinations: @escaping (NavigationDestinationRegistry) -> Void,
+        destinations: NavigationDestinations,
         @ViewBuilder root: @escaping (Navigator) -> Root
     ) {
         self.id = id
@@ -63,6 +62,35 @@ public struct PathRestorableNavigationShell<Root: View>: View {
         self.policy = policy
         self.destinations = destinations
         self.rootBuilder = root
+    }
+
+    /// Creates a restorable navigation shell (Option 4 – registry-driven).
+    ///
+    /// This overload accepts a plain registration closure for convenience.
+    public init(
+        id: String,
+        idScope: NavigationStackIDScope = .global,
+        navigator: Navigator? = nil,
+        configuration: TopNavigationBarConfiguration = .defaultMaterial,
+        store: NavigationStackStateStore = UserDefaultsNavigationStackStore(),
+        encoder: JSONEncoder = .init(),
+        decoder: JSONDecoder = .init(),
+        policy: NavigationRestorePolicy = .init(),
+        destinations: @escaping @MainActor (NavigationDestinationRegistering) -> Void,
+        @ViewBuilder root: @escaping (Navigator) -> Root
+    ) {
+        self.init(
+            id: id,
+            idScope: idScope,
+            navigator: navigator,
+            configuration: configuration,
+            store: store,
+            encoder: encoder,
+            decoder: decoder,
+            policy: policy,
+            destinations: NavigationDestinations(destinations),
+            root: root
+        )
     }
 
     /// Final persistence identifier derived from `id` and `idScope`.
@@ -112,7 +140,7 @@ private struct _PathRestorableNavigationShellCore<Root: View>: View {
         encoder: JSONEncoder,
         decoder: JSONDecoder,
         policy: NavigationRestorePolicy,
-        destinations: @escaping (NavigationDestinationRegistry) -> Void,
+        destinations: NavigationDestinations,
         @ViewBuilder root: @escaping (Navigator) -> Root
     ) {
         self.id = id
@@ -160,13 +188,13 @@ private final class _RestorationState: ObservableObject {
         encoder: JSONEncoder,
         decoder: JSONDecoder,
         policy: NavigationRestorePolicy,
-        destinations: (NavigationDestinationRegistry) -> Void
+        destinations: NavigationDestinations
     ) {
         let registry = NavigationDestinationRegistry()
-        // `destinations` is intentionally a configuration closure: it mutates `registry` by calling
-        // `registry.register(...)` and is invoked once when this state is created. The configured registry is then
+        // `destinations` is intentionally a configuration bundle: it registers destinations by mutating `registry`
+        // via `registry.register(...)` and is applied once when this state is created. The configured registry is then
         // used to build views for both `navigator.push(route:)` and restore-time reconstruction.
-        destinations(registry)
+        destinations.register(into: registry)
 
         self.context = _NavigationStackRestorationContext(
             id: id,
