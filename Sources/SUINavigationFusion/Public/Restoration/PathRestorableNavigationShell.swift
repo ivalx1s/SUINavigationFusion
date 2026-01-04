@@ -11,6 +11,7 @@ import Foundation
 public struct PathRestorableNavigationShell<Root: View>: View {
     private let id: String
     private let idScope: NavigationStackIDScope
+    private let path: Binding<SUINavigationPath>?
     private let providedNavigator: Navigator?
     private let configuration: TopNavigationBarConfiguration
     private let store: NavigationStackStateStore
@@ -43,6 +44,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     public init(
         id: String,
         idScope: NavigationStackIDScope = .global,
+        path: Binding<SUINavigationPath>? = nil,
         navigator: Navigator? = nil,
         configuration: TopNavigationBarConfiguration = .defaultMaterial,
         store: NavigationStackStateStore = UserDefaultsNavigationStackStore(),
@@ -54,6 +56,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     ) {
         self.id = id
         self.idScope = idScope
+        self.path = path
         self.providedNavigator = navigator
         self.configuration = configuration
         self.store = store
@@ -70,6 +73,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     public init(
         id: String,
         idScope: NavigationStackIDScope = .global,
+        path: Binding<SUINavigationPath>? = nil,
         navigator: Navigator? = nil,
         configuration: TopNavigationBarConfiguration = .defaultMaterial,
         store: NavigationStackStateStore = UserDefaultsNavigationStackStore(),
@@ -82,6 +86,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
         self.init(
             id: id,
             idScope: idScope,
+            path: path,
             navigator: navigator,
             configuration: configuration,
             store: store,
@@ -106,6 +111,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
     public var body: some View {
         _PathRestorableNavigationShellCore(
             id: effectiveID,
+            path: path,
             navigator: providedNavigator,
             configuration: configuration,
             store: store,
@@ -125,6 +131,7 @@ public struct PathRestorableNavigationShell<Root: View>: View {
 /// This avoids initializing `@StateObject` with an id that may not yet be available during `init`.
 private struct _PathRestorableNavigationShellCore<Root: View>: View {
     private let id: String
+    private let path: Binding<SUINavigationPath>?
     private let providedNavigator: Navigator?
     private let configuration: TopNavigationBarConfiguration
     private let rootBuilder: (Navigator) -> Root
@@ -134,6 +141,7 @@ private struct _PathRestorableNavigationShellCore<Root: View>: View {
 
     init(
         id: String,
+        path: Binding<SUINavigationPath>?,
         navigator: Navigator?,
         configuration: TopNavigationBarConfiguration,
         store: NavigationStackStateStore,
@@ -144,6 +152,7 @@ private struct _PathRestorableNavigationShellCore<Root: View>: View {
         @ViewBuilder root: @escaping (Navigator) -> Root
     ) {
         self.id = id
+        self.path = path
         self.providedNavigator = navigator
         self.configuration = configuration
         self.rootBuilder = root
@@ -165,11 +174,20 @@ private struct _PathRestorableNavigationShellCore<Root: View>: View {
     }
 
     var body: some View {
+        let pathDriver: _NavigationPathDriver? = path.map { binding in
+            _NavigationPathDriver(
+                get: { binding.wrappedValue },
+                set: { newPath, _ in binding.wrappedValue = newPath },
+                encoder: restorationState.context.encoder
+            )
+        }
+
         VStack {
             _NavigationRoot(
                 navigator: navigator,
                 configuration: configuration,
                 restorationContext: restorationState.context,
+                pathDriver: pathDriver,
                 root: { rootBuilder(navigator) }
             )
         }

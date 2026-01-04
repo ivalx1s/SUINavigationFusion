@@ -1,5 +1,27 @@
 import SwiftUI
 import Combine
+import Foundation
+
+@MainActor
+struct _NavigationPathDriver {
+    /// Returns the current bound navigation path.
+    ///
+    /// This is a closure (instead of a stored `Binding`) so the driver can be installed from SwiftUI
+    /// without leaking SwiftUI generic types into `Navigator`.
+    let get: () -> SUINavigationPath
+
+    /// Sets a new bound navigation path.
+    ///
+    /// - Parameter path: The updated path.
+    /// - Parameter animated: Whether the update should be considered animated.
+    ///
+    /// The actual UIKit animation is performed by the hosting shell when it reconciles the UIKit stack to match
+    /// the new path (using the current SwiftUI transaction).
+    let set: (_ path: SUINavigationPath, _ animated: Bool) -> Void
+
+    /// Encoder used to serialize route payloads into `SUINavigationPath.Element.payload`.
+    let encoder: JSONEncoder
+}
 
 /// A thin, observable wrapper around a `NCUINavigationController` that lets
 /// SwiftUI code perform imperative navigation without touching UIKit APIs.
@@ -47,6 +69,14 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// Non-`nil` when the navigator is hosted by `TypedNavigationShell`,
     /// `PathRestorableNavigationShell`, or `RestorableNavigationShell`.
     var _routingRegistry: NavigationDestinationRegistry?
+
+    /// Optional driver that makes this navigator path-driven (NavigationStack-like).
+    ///
+    /// When set, stack operations (`push(route:)`, `pop`, etc.) mutate the bound `SUINavigationPath`
+    /// instead of directly pushing/popping UIKit view controllers.
+    ///
+    /// Path-driven stacks must be route-only (every screen above root must be representable as a path element).
+    var _pathDriver: _NavigationPathDriver?
     
     // MARK: - Equatable
     
@@ -112,6 +142,26 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     
     // MARK: - Stack operations
 
+    private func mutatePath(animated: Bool, _ mutation: (inout SUINavigationPath) -> Void) {
+        guard let driver = _pathDriver else { return }
+        var path = driver.get()
+        mutation(&path)
+
+        // Translate the caller’s animation intent into a SwiftUI transaction so the shell can mirror it
+        // when reconciling UIKit.
+        var transaction = Transaction()
+        if animated {
+            transaction.animation = .default
+        } else {
+            transaction.disablesAnimations = true
+            transaction.animation = nil
+        }
+
+        withTransaction(transaction) {
+            driver.set(path, animated)
+        }
+    }
+
     func _makeHostingController(
         content: AnyView,
         disableBackGesture: Bool,
@@ -139,6 +189,10 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///   - animated: `true` to animate the transition (default), `false` for an
     ///     immediate push.
     public func push<V: View>(_ view: V, animated: Bool = true, disableBackGesture: Bool = false) {
+        if _pathDriver != nil {
+            assertionFailure("Navigator.push(_:) is not supported in path-driven navigation. Use push(route:) or mutate the bound SUINavigationPath.")
+            return
+        }
         guard let navigationController = currentNavigationController() else { return }
 
         let controller = _makeHostingController(
@@ -159,12 +213,11 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// - `PathRestorableNavigationShell` / `RestorableNavigationShell` (typed routing + persistence)
     ///
     /// If the navigator is not hosted by a typed/restorable shell, this call asserts in debug builds and no-ops.
-    public func push<Route: NavigationRoute>(
+    public func push<Route: NavigationPathItem>(
         route: Route,
         animated: Bool = true,
         disableBackGesture: Bool = false
     ) {
-        guard let navigationController = currentNavigationController() else { return }
         guard let registry = _routingRegistry else {
             assertionFailure("Navigator.push(route:) requires a typed navigation shell (TypedNavigationShell / PathRestorableNavigationShell / RestorableNavigationShell).")
             return
@@ -183,6 +236,20 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             assertionFailure("Destination key '\(key.rawValue)' is registered for a different route type.")
             return
         }
+
+        if let driver = _pathDriver {
+            do {
+                let payload = try driver.encoder.encode(route)
+                mutatePath(animated: animated) { path in
+                    path.append(.init(key: key, payload: payload, disableBackGesture: disableBackGesture))
+                }
+            } catch {
+                assertionFailure("Failed to encode route payload for path-driven navigation: \(error).")
+            }
+            return
+        }
+
+        guard let navigationController = currentNavigationController() else { return }
 
         let view = registration.buildViewFromValue(route)
 
@@ -219,6 +286,10 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///
     /// - Parameter animated: `true` to animate the pop (default).
     public func pop() {
+        if _pathDriver != nil {
+            mutatePath(animated: true) { $0.removeLast(1) }
+            return
+        }
         guard let navigationController = currentNavigationController() else { return }
         navigationController.popViewController(animated: true)
         _restorationContext?.syncSnapshot(from: navigationController)
@@ -228,6 +299,10 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///
     /// - Parameter animated: `true` to animate the pop (default).
     public func popNonAnimated() {
+        if _pathDriver != nil {
+            mutatePath(animated: false) { $0.removeLast(1) }
+            return
+        }
         guard let navigationController = currentNavigationController() else { return }
         navigationController.popViewController(animated: false)
         _restorationContext?.syncSnapshot(from: navigationController)
@@ -237,6 +312,10 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///
     /// - Parameter animated: `true` to animate the transition (default).
     public func popToRoot(animated: Bool = true) {
+        if _pathDriver != nil {
+            mutatePath(animated: animated) { $0.clear() }
+            return
+        }
         guard let navigationController = currentNavigationController() else { return }
         navigationController.popToRootViewController(animated: animated)
         _restorationContext?.syncSnapshot(from: navigationController)
@@ -251,6 +330,10 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// If `levels` is greater than or equal to the current depth, the call
     /// behaves like `popToRoot(animated:)`.
     public func pop(levels: Int, animated: Bool = true) {
+        if _pathDriver != nil {
+            mutatePath(animated: animated) { $0.removeLast(levels) }
+            return
+        }
         guard levels > 0, let navigationController = currentNavigationController() else { return }
         let depth = navigationController.viewControllers.count
         if levels >= depth - 1 {

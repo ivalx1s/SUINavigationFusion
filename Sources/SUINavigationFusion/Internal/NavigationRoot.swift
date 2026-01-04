@@ -54,11 +54,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
     private let configuration: TopNavigationBarConfiguration
     private let routingRegistry: NavigationDestinationRegistry?
     private let restorationContext: _NavigationStackRestorationContext?
+    private let pathDriver: _NavigationPathDriver?
     
     init(
         configuration: TopNavigationBarConfiguration,
         routingRegistry: NavigationDestinationRegistry? = nil,
         restorationContext: _NavigationStackRestorationContext? = nil,
+        pathDriver: _NavigationPathDriver? = nil,
         @ViewBuilder root: @escaping (Navigator) -> Root
     ) {
         self.navigator = nil
@@ -66,6 +68,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         self.configuration = configuration
         self.routingRegistry = routingRegistry
         self.restorationContext = restorationContext
+        self.pathDriver = pathDriver
     }
     
     init(
@@ -73,6 +76,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         configuration: TopNavigationBarConfiguration,
         routingRegistry: NavigationDestinationRegistry? = nil,
         restorationContext: _NavigationStackRestorationContext? = nil,
+        pathDriver: _NavigationPathDriver? = nil,
         @ViewBuilder root: @escaping () -> Root
     ) {
         self.navigator = navigator
@@ -80,6 +84,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         self.configuration = configuration
         self.routingRegistry = routingRegistry
         self.restorationContext = restorationContext
+        self.pathDriver = pathDriver
     }
     
     // MARK: - Coordinator
@@ -90,6 +95,8 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         var restorationContext: _NavigationStackRestorationContext?
         var didAttemptRestore: Bool = false
         var isRestoring: Bool = false
+        var isApplyingPath: Bool = false
+        var pathDriver: _NavigationPathDriver?
 
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
@@ -159,7 +166,20 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             animated: Bool
         ) {
             guard !isRestoring, let navigationController = navigationController as? NCUINavigationController else { return }
-            restorationContext?.syncSnapshot(from: navigationController)
+            guard let restorationContext else { return }
+
+            let (path, _) = restorationContext.syncSnapshot(from: navigationController)
+
+            // In path-driven mode, the UIKit stack is the source of truth for gesture-driven changes.
+            // Update the bound path on every `didShow` (e.g. interactive swipe-back) to keep external routers in sync.
+            guard let pathDriver, !isApplyingPath else { return }
+            if pathDriver.get() == path { return }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                pathDriver.set(path, false)
+            }
         }
         
         private func applyCurve(_ timeFraction: CGFloat, curve: UIView.AnimationCurve) -> CGFloat {
@@ -276,11 +296,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             let transitionProgress = context.coordinator.progress
             context.coordinator.injectedNavigator = externalNavigator
             context.coordinator.restorationContext = restorationContext
+            context.coordinator.pathDriver = pathDriver
 
             externalNavigator.navigationPageTransitionProgress = transitionProgress
             externalNavigator.topNavigationBarConfigurationStore.setConfiguration(configuration)
             externalNavigator._restorationContext = restorationContext
             externalNavigator._routingRegistry = effectiveRoutingRegistry
+            externalNavigator._pathDriver = pathDriver
             let rootController = makeRootViewController(
                 for: externalNavigator,
                 progress: transitionProgress
@@ -289,15 +311,62 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             navigationController.setNavigationBarHidden(true, animated: false)
             navigationController.delegate = context.coordinator
 
-            if let restorationContext, !context.coordinator.didAttemptRestore {
+            if !context.coordinator.didAttemptRestore {
                 context.coordinator.didAttemptRestore = true
-                context.coordinator.isRestoring = true
-                restorationContext.restoreIfAvailable(
-                    navigationController: navigationController,
-                    rootController: rootController,
-                    navigator: externalNavigator
-                )
-                context.coordinator.isRestoring = false
+
+                if let pathDriver {
+                    guard let restorationContext else {
+                        assertionFailure("Path-driven navigation requires a restoration context (use PathRestorableNavigationShell / RestorableNavigationShell).")
+                        return navigationController
+                    }
+
+                    context.coordinator.isRestoring = true
+                    context.coordinator.isApplyingPath = true
+
+                    let desiredPath = pathDriver.get()
+                    if desiredPath.elements.isEmpty {
+                        restorationContext.restoreIfAvailable(
+                            navigationController: navigationController,
+                            rootController: rootController,
+                            navigator: externalNavigator
+                        )
+                    } else {
+                        let (restoredControllers, sanitizedPath) = restorationContext.buildViewControllers(
+                            for: desiredPath,
+                            navigator: externalNavigator
+                        )
+                        navigationController.setViewControllers([rootController] + restoredControllers, animated: false)
+                        restorationContext.syncSnapshot(from: navigationController)
+
+                        if sanitizedPath != desiredPath {
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                pathDriver.set(sanitizedPath, false)
+                            }
+                        }
+                    }
+
+                    let (currentPath, _) = restorationContext.currentPath(from: navigationController)
+                    if currentPath != desiredPath {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            pathDriver.set(currentPath, false)
+                        }
+                    }
+
+                    context.coordinator.isApplyingPath = false
+                    context.coordinator.isRestoring = false
+                } else if let restorationContext {
+                    context.coordinator.isRestoring = true
+                    restorationContext.restoreIfAvailable(
+                        navigationController: navigationController,
+                        rootController: rootController,
+                        navigator: externalNavigator
+                    )
+                    context.coordinator.isRestoring = false
+                }
             }
             return navigationController
         } else {
@@ -310,11 +379,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             let transitionProgress = context.coordinator.progress
             context.coordinator.injectedNavigator = autoInjectedNavigator
             context.coordinator.restorationContext = restorationContext
+            context.coordinator.pathDriver = pathDriver
 
             autoInjectedNavigator.navigationPageTransitionProgress = transitionProgress
             autoInjectedNavigator.topNavigationBarConfigurationStore.setConfiguration(configuration)
             autoInjectedNavigator._restorationContext = restorationContext
             autoInjectedNavigator._routingRegistry = effectiveRoutingRegistry
+            autoInjectedNavigator._pathDriver = pathDriver
             let rootController = makeRootViewController(
                 for: autoInjectedNavigator,
                 progress: transitionProgress
@@ -323,15 +394,62 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             navigationController.setNavigationBarHidden(true, animated: false)
             navigationController.delegate = context.coordinator
 
-            if let restorationContext, !context.coordinator.didAttemptRestore {
+            if !context.coordinator.didAttemptRestore {
                 context.coordinator.didAttemptRestore = true
-                context.coordinator.isRestoring = true
-                restorationContext.restoreIfAvailable(
-                    navigationController: navigationController,
-                    rootController: rootController,
-                    navigator: autoInjectedNavigator
-                )
-                context.coordinator.isRestoring = false
+
+                if let pathDriver {
+                    guard let restorationContext else {
+                        assertionFailure("Path-driven navigation requires a restoration context (use PathRestorableNavigationShell / RestorableNavigationShell).")
+                        return navigationController
+                    }
+
+                    context.coordinator.isRestoring = true
+                    context.coordinator.isApplyingPath = true
+
+                    let desiredPath = pathDriver.get()
+                    if desiredPath.elements.isEmpty {
+                        restorationContext.restoreIfAvailable(
+                            navigationController: navigationController,
+                            rootController: rootController,
+                            navigator: autoInjectedNavigator
+                        )
+                    } else {
+                        let (restoredControllers, sanitizedPath) = restorationContext.buildViewControllers(
+                            for: desiredPath,
+                            navigator: autoInjectedNavigator
+                        )
+                        navigationController.setViewControllers([rootController] + restoredControllers, animated: false)
+                        restorationContext.syncSnapshot(from: navigationController)
+
+                        if sanitizedPath != desiredPath {
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                pathDriver.set(sanitizedPath, false)
+                            }
+                        }
+                    }
+
+                    let (currentPath, _) = restorationContext.currentPath(from: navigationController)
+                    if currentPath != desiredPath {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            pathDriver.set(currentPath, false)
+                        }
+                    }
+
+                    context.coordinator.isApplyingPath = false
+                    context.coordinator.isRestoring = false
+                } else if let restorationContext {
+                    context.coordinator.isRestoring = true
+                    restorationContext.restoreIfAvailable(
+                        navigationController: navigationController,
+                        rootController: rootController,
+                        navigator: autoInjectedNavigator
+                    )
+                    context.coordinator.isRestoring = false
+                }
             }
             return navigationController
         }
@@ -347,6 +465,8 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         let progress = context.coordinator.progress
         navigator.navigationPageTransitionProgress = progress
         navigator._routingRegistry = routingRegistry ?? restorationContext?.registry
+        navigator._pathDriver = pathDriver
+        context.coordinator.pathDriver = pathDriver
         // NOTE:
         // `TopNavigationBarConfigurationStore` is an `ObservableObject` (via `@Published configuration`).
         // Publishing changes synchronously from inside `updateUIViewController` triggers:
@@ -357,6 +477,77 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         Task { @MainActor in
             await Task.yield()
             navigator.topNavigationBarConfigurationStore.setConfiguration(updatedConfiguration)
+        }
+
+        // Path-driven navigation (NavigationStack-like):
+        // If a path driver is installed, reconcile the UIKit stack to match the bound `SUINavigationPath`.
+        if let pathDriver, let restorationContext, !context.coordinator.isRestoring {
+            let desiredRaw = pathDriver.get()
+            let desiredPath = (desiredRaw.schemaVersion == 1) ? desiredRaw : SUINavigationPath()
+            let shouldAnimate = (context.transaction.animation != nil) && !context.transaction.disablesAnimations
+
+            let (currentPath, isFullyRepresentable) = restorationContext.currentPath(from: navigationController)
+
+            if desiredPath != currentPath || !isFullyRepresentable {
+                context.coordinator.isApplyingPath = true
+                defer { context.coordinator.isApplyingPath = false }
+
+                let currentElements = currentPath.elements
+                let desiredElements = desiredPath.elements
+
+                if isFullyRepresentable,
+                   desiredElements.count == currentElements.count + 1,
+                   Array(desiredElements.prefix(currentElements.count)) == currentElements,
+                   let element = desiredElements.last {
+                    // Push one element.
+                    let singlePath = SUINavigationPath(elements: [element])
+                    let (controllers, _) = restorationContext.buildViewControllers(for: singlePath, navigator: navigator)
+                    if let controller = controllers.first {
+                        navigationController.pushViewController(controller, animated: shouldAnimate)
+                    } else {
+                        // If the appended element cannot be built (missing destination, decode failure, etc.),
+                        // fall back to a full rebuild to respect the restore policy (e.g. `.clearAllAndShowRoot`).
+                        let (rebuiltControllers, _) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
+                        navigationController.setViewControllers([hosting] + rebuiltControllers, animated: false)
+                    }
+                } else if isFullyRepresentable,
+                          currentElements.count == desiredElements.count + 1,
+                          Array(currentElements.prefix(desiredElements.count)) == desiredElements {
+                    // Pop one element.
+                    navigationController.popViewController(animated: shouldAnimate)
+                } else if isFullyRepresentable,
+                          desiredElements.count < currentElements.count,
+                          Array(currentElements.prefix(desiredElements.count)) == desiredElements {
+                    // Pop to a prefix (including root).
+                    if desiredElements.isEmpty {
+                        navigationController.popToRootViewController(animated: shouldAnimate)
+                    } else {
+                        let targetIndex = desiredElements.count
+                        if navigationController.viewControllers.indices.contains(targetIndex) {
+                            let target = navigationController.viewControllers[targetIndex]
+                            navigationController.popToViewController(target, animated: shouldAnimate)
+                        } else {
+                            navigationController.popToRootViewController(animated: shouldAnimate)
+                        }
+                    }
+                } else {
+                    // Big diff (or unrepresentable suffix) → rebuild stack from desired path.
+                    let (controllers, _) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
+                    navigationController.setViewControllers([hosting] + controllers, animated: false)
+                }
+
+                navigationController.setNavigationBarHidden(true, animated: false)
+
+                // Persist and normalize the bound path to match the actual UIKit stack (policy may drop invalid suffix).
+                let (actualPath, _) = restorationContext.syncSnapshot(from: navigationController)
+                if actualPath != desiredRaw {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        pathDriver.set(actualPath, false)
+                    }
+                }
+            }
         }
 
         let updatedRoot = DecoratedRoot(
@@ -377,6 +568,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         }
         
         Task { @MainActor in
+            navigator._pathDriver = nil
             navigator.detachNavigationController(navigationController)
         }
     }

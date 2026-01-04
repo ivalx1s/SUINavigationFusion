@@ -36,6 +36,14 @@ public final class NavigationDestinationRegistry: NavigationDestinationRegisteri
         aliases: [NavigationDestinationKey] = [],
         @ViewBuilder destination: @escaping (Item) -> Screen
     ) {
+        // If the payload type declares a key, prefer keeping registration consistent with it.
+        // This is especially important for external routers building `SUINavigationPath` without a registry reference.
+        if key != Item.destinationKey {
+            assertionFailure(
+                "Key mismatch for \(Item.self): registering '\(key.rawValue)' but \(Item.self).destinationKey is '\(Item.destinationKey.rawValue)'."
+            )
+        }
+
         let registration = Registration(
             key: key,
             payloadTypeID: ObjectIdentifier(type),
@@ -54,6 +62,15 @@ public final class NavigationDestinationRegistry: NavigationDestinationRegisteri
         }
 
         keyByType[ObjectIdentifier(type)] = key
+    }
+
+    /// Registers a destination using the payload type’s `destinationKey`.
+    public func register<Item: NavigationPathItem, Screen: View>(
+        _ type: Item.Type,
+        aliases: [NavigationDestinationKey] = [],
+        @ViewBuilder destination: @escaping (Item) -> Screen
+    ) {
+        register(type, key: Item.destinationKey, aliases: aliases, destination: destination)
     }
 
     func key<Item: NavigationPathItem>(for type: Item.Type) -> NavigationDestinationKey? {

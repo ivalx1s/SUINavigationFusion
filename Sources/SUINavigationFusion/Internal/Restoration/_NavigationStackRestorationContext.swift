@@ -50,65 +50,89 @@ final class _NavigationStackRestorationContext {
         }
         lastSavedData = data
 
-        let snapshot: _NavigationStackSnapshot
+        let storedPath: SUINavigationPath
         do {
-            snapshot = try decoder.decode(_NavigationStackSnapshot.self, from: data)
+            storedPath = try decoder.decode(SUINavigationPath.self, from: data)
         } catch {
             saveSnapshotData(nil)
             return
         }
 
-        guard snapshot.schemaVersion == 1 else {
+        guard storedPath.schemaVersion == 1 else {
             saveSnapshotData(nil)
             return
         }
 
-        var restoredViewControllers: [UIViewController] = []
-        var restoredEntries: [_NavigationStackSnapshot.Entry] = []
+        let (restoredViewControllers, restoredPath) = buildViewControllers(for: storedPath, navigator: navigator)
 
-        for entry in snapshot.entries {
-            guard let registration = registry.registration(for: entry.key) else {
-                policy.onFailure(.missingDestination(key: entry.key))
-                handleRestoreFailure(&restoredViewControllers, &restoredEntries)
-                break
-            }
-
-            do {
-                let view = try registration.buildViewFromPayload(entry.payload, decoder)
-                let restorationInfo = _NavigationRestorationInfo(key: entry.key, payload: entry.payload)
-                let controller = navigator._makeHostingController(
-                    content: view,
-                    disableBackGesture: entry.disableBackGesture,
-                    restorationInfo: restorationInfo
-                )
-                restoredViewControllers.append(controller)
-                restoredEntries.append(entry)
-            } catch {
-                policy.onFailure(.decodeFailed(key: entry.key, errorDescription: String(describing: error)))
-                handleRestoreFailure(&restoredViewControllers, &restoredEntries)
-                break
-            }
-        }
-
-        if restoredViewControllers.isEmpty {
+        guard !restoredViewControllers.isEmpty else {
             // Either there was nothing to restore, or restoring failed immediately.
             // Keep the root-only stack and clear any invalid cached state.
-            if snapshot.entries.isEmpty {
-                saveSnapshotData(nil)
-            } else if restoredEntries.isEmpty {
-                saveSnapshotData(nil)
-            } else {
-                saveSnapshot(_NavigationStackSnapshot(entries: restoredEntries))
-            }
+            saveSnapshotData(nil)
             return
         }
 
         navigationController.setViewControllers([rootController] + restoredViewControllers, animated: false)
-        saveSnapshot(_NavigationStackSnapshot(entries: restoredEntries))
+        savePath(restoredPath)
     }
 
-    func syncSnapshot(from navigationController: NCUINavigationController) {
-        var entries: [_NavigationStackSnapshot.Entry] = []
+    @discardableResult
+    func syncSnapshot(from navigationController: NCUINavigationController) -> (path: SUINavigationPath, isFullyRepresentable: Bool) {
+        let (path, isFullyRepresentable) = currentPath(from: navigationController)
+
+        if path.elements.isEmpty {
+            saveSnapshotData(nil)
+        } else {
+            savePath(path)
+        }
+
+        return (path, isFullyRepresentable)
+    }
+
+    func buildViewControllers(
+        for path: SUINavigationPath,
+        navigator: Navigator
+    ) -> (viewControllers: [UIViewController], sanitizedPath: SUINavigationPath) {
+        guard path.schemaVersion == 1 else {
+            return ([], SUINavigationPath())
+        }
+
+        var viewControllers: [UIViewController] = []
+        var elements: [SUINavigationPath.Element] = []
+
+        for element in path.elements {
+            guard let registration = registry.registration(for: element.key) else {
+                policy.onFailure(.missingDestination(key: element.key))
+                if policy.behavior == .clearAllAndShowRoot {
+                    return ([], SUINavigationPath())
+                }
+                break
+            }
+
+            do {
+                let view = try registration.buildViewFromPayload(element.payload, decoder)
+                let restorationInfo = _NavigationRestorationInfo(key: element.key, payload: element.payload)
+                let controller = navigator._makeHostingController(
+                    content: view,
+                    disableBackGesture: element.disableBackGesture,
+                    restorationInfo: restorationInfo
+                )
+                viewControllers.append(controller)
+                elements.append(element)
+            } catch {
+                policy.onFailure(.decodeFailed(key: element.key, errorDescription: String(describing: error)))
+                if policy.behavior == .clearAllAndShowRoot {
+                    return ([], SUINavigationPath())
+                }
+                break
+            }
+        }
+
+        return (viewControllers, SUINavigationPath(elements: elements))
+    }
+
+    func currentPath(from navigationController: NCUINavigationController) -> (path: SUINavigationPath, isFullyRepresentable: Bool) {
+        var elements: [SUINavigationPath.Element] = []
 
         for controller in navigationController.viewControllers.dropFirst() {
             guard
@@ -119,7 +143,7 @@ final class _NavigationStackRestorationContext {
                 break
             }
 
-            entries.append(
+            elements.append(
                 .init(
                     key: info.key,
                     payload: info.payload,
@@ -128,29 +152,13 @@ final class _NavigationStackRestorationContext {
             )
         }
 
-        if entries.isEmpty {
-            saveSnapshotData(nil)
-        } else {
-            saveSnapshot(_NavigationStackSnapshot(entries: entries))
-        }
+        let isFullyRepresentable = (elements.count == navigationController.viewControllers.dropFirst().count)
+        return (SUINavigationPath(elements: elements), isFullyRepresentable)
     }
 
-    private func handleRestoreFailure(
-        _ restoredViewControllers: inout [UIViewController],
-        _ restoredEntries: inout [_NavigationStackSnapshot.Entry]
-    ) {
-        switch policy.behavior {
-        case .dropSuffixAndContinue:
-            return
-        case .clearAllAndShowRoot:
-            restoredViewControllers.removeAll()
-            restoredEntries.removeAll()
-        }
-    }
-
-    private func saveSnapshot(_ snapshot: _NavigationStackSnapshot) {
+    private func savePath(_ path: SUINavigationPath) {
         do {
-            let data = try encoder.encode(snapshot)
+            let data = try encoder.encode(path)
             saveSnapshotData(data)
         } catch {
             saveSnapshotData(nil)

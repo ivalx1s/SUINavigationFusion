@@ -6,9 +6,10 @@ import Foundation
 /// Use this when your app has a single, typed `Route` (often an enum) and you want an exhaustive `switch`.
 /// Use `idScope: .scene` to isolate snapshots per window/scene when supporting multi-window apps.
 @MainActor
-public struct RestorableNavigationShell<Route: NavigationRoute>: View {
+public struct RestorableNavigationShell<Route: NavigationPathItem>: View {
     private let id: String
     private let idScope: NavigationStackIDScope
+    private let path: Binding<SUINavigationPath>?
     private let providedNavigator: Navigator?
     private let configuration: TopNavigationBarConfiguration
     private let store: NavigationStackStateStore
@@ -42,6 +43,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
     public init<Root: View, Destination: View>(
         id: String,
         idScope: NavigationStackIDScope = .global,
+        path: Binding<SUINavigationPath>? = nil,
         navigator: Navigator? = nil,
         configuration: TopNavigationBarConfiguration = .defaultMaterial,
         store: NavigationStackStateStore = UserDefaultsNavigationStackStore(),
@@ -56,6 +58,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
     ) {
         self.id = id
         self.idScope = idScope
+        self.path = path
         self.providedNavigator = navigator
         self.configuration = configuration
         self.store = store
@@ -73,6 +76,7 @@ public struct RestorableNavigationShell<Route: NavigationRoute>: View {
         PathRestorableNavigationShell(
             id: id,
             idScope: idScope,
+            path: path,
             navigator: providedNavigator,
             configuration: configuration,
             store: store,
