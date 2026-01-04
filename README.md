@@ -294,6 +294,9 @@ In this mode:
 - The shell reconciles the UIKit stack to match the bound `SUINavigationPath`.
 - Interactive swipe-back updates the bound path (UIKit stack is authoritative for gestures).
 - `Navigator.push(_ view:)` is not supported (the stack must remain route-backed / representable as a path).
+- While UIKit is transitioning (animated push/pop, interactive swipe-back, iOS 18+ zoom dismiss), reconciliation is
+  intentionally deferred and path mutations are coalesced until the transition completes. This avoids UIKit
+  re-entrancy issues that can otherwise corrupt the navigation stack.
 
 ### External router example
 

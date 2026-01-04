@@ -78,6 +78,34 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// Path-driven stacks must be route-only (every screen above root must be representable as a path element).
     var _pathDriver: _NavigationPathDriver?
 
+    private struct _PendingPathMutation {
+        /// Whether the caller requested an animated update.
+        ///
+        /// In path-driven navigation, this is translated into a SwiftUI transaction (`disablesAnimations`)
+        /// and then mirrored to UIKit by the hosting shell when reconciling the stack.
+        let animated: Bool
+
+        /// Optional transition request for the next path-driven push (e.g. iOS 18+ `.zoom(...)`).
+        ///
+        /// This is an ephemeral style hint and is **not persisted**.
+        let transition: SUINavigationTransition?
+
+        /// Mutation to apply to the bound `SUINavigationPath`.
+        let mutation: (inout SUINavigationPath) -> Void
+    }
+
+    /// Path mutations that were requested while a UIKit transition was still in flight.
+    ///
+    /// UIKit is not re-entrant: pushing/popping while `UINavigationController` is still transitioning can
+    /// corrupt the stack and break animations (especially for iOS 18+ zoom interactive dismiss).
+    ///
+    /// We queue path mutations and replay them once the transition finishes.
+    private var pendingPathMutations: [_PendingPathMutation] = []
+
+    /// Tracks the transition coordinator we attached a completion handler to, so we only schedule one flush
+    /// per in-flight transition.
+    private weak var pendingMutationCoordinator: UIViewControllerTransitionCoordinator?
+
     /// Internal registry of UIKit views used as anchors for iOS 18+ native zoom transitions.
     ///
     /// SwiftUI code registers anchors via `.suinavZoomSource(id:)` / `.suinavZoomDestination(id:)`.
@@ -151,14 +179,34 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     private func mutatePath(
         animated: Bool,
         transition: SUINavigationTransition? = nil,
-        _ mutation: (inout SUINavigationPath) -> Void
+        _ mutation: @escaping (inout SUINavigationPath) -> Void
     ) {
         guard let driver = _pathDriver else { return }
+
+        // If UIKit is currently transitioning (interactive pop, zoom dismiss, animated push, etc.),
+        // do not mutate the bound path immediately: SwiftUI would try to reconcile UIKit while the transition
+        // is still active, which can lead to stack corruption and broken animations.
+        if let navigationController = currentNavigationController(),
+           let coordinator = navigationController.transitionCoordinator {
+            pendingPathMutations.append(.init(animated: animated, transition: transition, mutation: mutation))
+            schedulePendingPathMutationFlush(using: coordinator)
+            return
+        }
+
+        applyPathMutation(driver: driver, animated: animated, transition: transition, mutation)
+    }
+
+    private func applyPathMutation(
+        driver: _NavigationPathDriver,
+        animated: Bool,
+        transition: SUINavigationTransition?,
+        _ mutation: (inout SUINavigationPath) -> Void
+    ) {
         var path = driver.get()
         mutation(&path)
 
-        // Translate the caller’s animation intent into a SwiftUI transaction so the shell can mirror it
-        // when reconciling UIKit.
+        // Translate the caller’s intent into a SwiftUI transaction so the shell can mirror it
+        // when reconciling UIKit (animate by default; allow disabling for deep links, restores, etc.).
         var transaction = Transaction()
         if animated {
             transaction.animation = .default
@@ -173,6 +221,61 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         withTransaction(transaction) {
             driver.set(path, animated)
         }
+    }
+
+    private func schedulePendingPathMutationFlush(using coordinator: UIViewControllerTransitionCoordinator) {
+        // Only schedule one flush per in-flight transition.
+        guard pendingMutationCoordinator !== coordinator else { return }
+        pendingMutationCoordinator = coordinator
+
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.flushPendingPathMutationsIfPossible()
+            }
+        }
+    }
+
+    @MainActor
+    private func flushPendingPathMutationsIfPossible() {
+        guard let driver = _pathDriver else {
+            pendingPathMutations.removeAll()
+            pendingMutationCoordinator = nil
+            return
+        }
+        guard !pendingPathMutations.isEmpty else {
+            pendingMutationCoordinator = nil
+            return
+        }
+
+        // If a transition is still active (or a new one started), wait for its completion.
+        if let navigationController = currentNavigationController(),
+           let coordinator = navigationController.transitionCoordinator {
+            schedulePendingPathMutationFlush(using: coordinator)
+            return
+        }
+
+        let mutations = pendingPathMutations
+        pendingPathMutations.removeAll()
+        pendingMutationCoordinator = nil
+
+        // Apply all mutations to the latest path snapshot and publish once.
+        //
+        // If multiple actions were requested while transitioning, coalescing into a single state update is
+        // the safest behavior (mirrors SwiftUI: last update wins, UIKit reconciles once).
+        var path = driver.get()
+        for pending in mutations {
+            pending.mutation(&path)
+        }
+
+        // Use the last mutation’s “style” intent for the coalesced update.
+        let last = mutations.last
+        applyPathMutation(
+            driver: driver,
+            animated: last?.animated ?? false,
+            transition: last?.transition,
+            { $0 = path }
+        )
     }
 
     func _makeHostingController(
@@ -246,6 +349,10 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///   - transition: Optional transition request (e.g. `.zoom(...)` on iOS 18+). Defaults to `nil` (system push).
     ///
     /// If the navigator is not hosted by a typed/restorable shell, this call asserts in debug builds and no-ops.
+    ///
+    /// In path-driven navigation, this method mutates the bound `SUINavigationPath` (the shell reconciles UIKit).
+    /// If UIKit is currently transitioning (animated push/pop, interactive dismiss), the path mutation is deferred
+    /// until the transition completes to avoid re-entrancy issues that can corrupt the stack.
     public func push<Route: NavigationPathItem>(
         route: Route,
         animated: Bool = true,

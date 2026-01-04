@@ -90,6 +90,28 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
     // MARK: - Coordinator
     @MainActor
     final class Coordinator: NSObject, UINavigationControllerDelegate {
+        fileprivate struct PendingReconcile {
+            /// The latest desired path observed while UIKit was still transitioning.
+            ///
+            /// We cannot safely reconcile UIKit to a new desired path while a transition is in flight
+            /// (interactive pop, zoom dismiss, animated push, etc.). Doing so can corrupt the navigation stack.
+            ///
+            /// Instead, we stash the desired path and re-emit it once the transition finishes, so the next
+            /// SwiftUI update can reconcile safely.
+            let desiredPath: SUINavigationPath
+
+            /// Whether animations were disabled for the SwiftUI update that produced `desiredPath`.
+            ///
+            /// `_NavigationRoot.updateUIViewController` mirrors SwiftUI’s `NavigationStack(path:)` behavior:
+            /// it animates by default and disables animations when `Transaction.disablesAnimations == true`.
+            let disablesAnimations: Bool
+
+            /// Optional transition request attached to the SwiftUI transaction (e.g. iOS 18+ zoom).
+            ///
+            /// This is an ephemeral style hint and is **not persisted**.
+            let requestedTransition: SUINavigationTransition?
+        }
+
         let progress = NavigationPageTransitionProgress()
         var injectedNavigator: Navigator?
         var restorationContext: _NavigationStackRestorationContext?
@@ -97,8 +119,10 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         var isRestoring: Bool = false
         var isApplyingPath: Bool = false
         var pathDriver: _NavigationPathDriver?
+        fileprivate var pendingReconcile: PendingReconcile?
         private var pendingPathUpdate: SUINavigationPath?
         private var pendingPathUpdateTask: Task<Void, Never>?
+        private var transitionStartBoundPath: SUINavigationPath?
 
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
@@ -116,6 +140,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                                          animated: Bool) {
             guard let transitionContext = navigationController.transitionCoordinator else { return }
             transitionCoordinator = transitionContext
+            transitionStartBoundPath = pathDriver?.get()
             
             transitionStartTime      = CACurrentMediaTime()
             transitionDuration       = transitionContext.transitionDuration
@@ -130,6 +155,36 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 self.transitionDuration       = context.transitionDuration
                 self.completionCurve          = context.completionCurve
                 self.completionVelocity       = context.completionVelocity
+
+                // Path-driven stacks are “NavigationStack-like”: an external router owns `SUINavigationPath`,
+                // and UIKit must follow it. For gesture-driven navigation (interactive pop/zoom dismiss),
+                // UIKit becomes the source of truth.
+                //
+                // iOS 18+ zoom interactive dismiss has a relatively long completion phase: `didShow` is invoked
+                // noticeably later than the moment the UI looks “done”. If we only update the bound path in
+                // `didShow`, the external router stays stale for a while, and user actions in that window may
+                // build on an outdated path and corrupt the stack.
+                //
+                // To close that window, when the interactive portion ends we proactively update the bound path
+                // to the *expected* result (pop or cancel). `_NavigationRoot.updateUIViewController` guards against
+                // reconciling while UIKit is still transitioning, so this update does not trigger re-entrant pops.
+                guard
+                    let pathDriver = self.pathDriver,
+                    self.restorationContext != nil,
+                    !self.isApplyingPath,
+                    context.isInteractive,
+                    !self.isPushTransition,
+                    let startBoundPath = self.transitionStartBoundPath
+                else { return }
+
+                // Only apply if the router hasn’t already changed the path during the gesture.
+                if pathDriver.get() != startBoundPath { return }
+
+                var expected = startBoundPath
+                if context.isCancelled == false {
+                    expected.removeLast(1)
+                }
+                self.scheduleBoundPathUpdate(expected)
             }
             
             let navigationControllerForIndices = navigationController
@@ -167,6 +222,8 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             didShow viewController: UIViewController,
             animated: Bool
         ) {
+            let startBoundPath = transitionStartBoundPath
+            transitionStartBoundPath = nil
             guard !isRestoring, let navigationController = navigationController as? NCUINavigationController else { return }
             guard let restorationContext else { return }
 
@@ -175,12 +232,33 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             // In path-driven mode, the UIKit stack is the source of truth for gesture-driven changes.
             // Update the bound path on every `didShow` (e.g. interactive swipe-back) to keep external routers in sync.
             guard let pathDriver, !isApplyingPath else { return }
-            if pathDriver.get() == path { return }
+            // Compare-and-swap: only overwrite the bound path if it still matches what we observed
+            // at the start of the transition. If an external router changed the path mid-transition,
+            // do not clobber it here; the next SwiftUI update will reconcile UIKit to the new path.
+            if let startBoundPath, pathDriver.get() != startBoundPath {
+                // Router changed path during the transition; do not overwrite.
+            } else if pathDriver.get() != path {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    pathDriver.set(path, false)
+                }
+            }
 
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                pathDriver.set(path, false)
+            // If reconciliation was deferred while UIKit was transitioning, re-emit the desired path now.
+            // This triggers a new SwiftUI update *after* the transition, allowing `_NavigationRoot.updateUIViewController`
+            // to reconcile safely with the captured animation/transition intent.
+            if let pendingReconcile {
+                self.pendingReconcile = nil
+
+                var transaction = Transaction()
+                transaction.disablesAnimations = pendingReconcile.disablesAnimations
+                if #available(iOS 17.0, *) {
+                    transaction.suinavigationTransition = pendingReconcile.requestedTransition
+                }
+                withTransaction(transaction) {
+                    pathDriver.set(pendingReconcile.desiredPath, !pendingReconcile.disablesAnimations)
+                }
             }
         }
 
@@ -506,75 +584,94 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             let (currentPath, isFullyRepresentable) = restorationContext.currentPath(from: navigationController)
 
             if desiredPath != currentPath || !isFullyRepresentable {
-                context.coordinator.isApplyingPath = true
-                defer { context.coordinator.isApplyingPath = false }
-
-                let currentElements = currentPath.elements
-                let desiredElements = desiredPath.elements
-
-                if isFullyRepresentable,
-                   desiredElements.count == currentElements.count + 1,
-                   Array(desiredElements.prefix(currentElements.count)) == currentElements,
-                   let element = desiredElements.last {
-                    // Push one element.
+                // UIKit is not re-entrant: mutating the navigation stack while a transition is in flight can
+                // corrupt the stack and break animations. This is especially noticeable for iOS 18+ zoom
+                // interactive dismiss, where the completion phase can be relatively long.
+                //
+                // If UIKit is currently transitioning, stash the desired path and apply it once `didShow` fires.
+                if navigationController.transitionCoordinator != nil {
                     let requestedTransition: SUINavigationTransition?
                     if #available(iOS 17.0, *) {
                         requestedTransition = context.transaction.suinavigationTransition
                     } else {
                         requestedTransition = nil
                     }
-                    if let (controller, defaultTransition) = restorationContext.buildViewController(for: element, navigator: navigator) {
-                        if shouldAnimate {
-                            navigator._applyTransitionIfNeeded(
-                                requestedTransition ?? defaultTransition,
-                                to: controller,
-                                disableBackGesture: element.disableBackGesture
-                            )
-                        }
-                        navigationController.pushViewController(controller, animated: shouldAnimate)
-                    } else {
-                        // If the appended element cannot be built (missing destination, decode failure, etc.),
-                        // keep the current UIKit stack and only normalize the bound path according to policy:
-                        // - `.dropSuffixAndContinue`: drop the invalid suffix (no UIKit changes)
-                        // - `.clearAllAndShowRoot`: pop to root (clear stack)
-                        let (_, sanitizedPath) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
-                        if sanitizedPath.elements.isEmpty && !currentElements.isEmpty {
-                            navigationController.popToRootViewController(animated: false)
-                        }
-                    }
-                } else if isFullyRepresentable,
-                          currentElements.count == desiredElements.count + 1,
-                          Array(currentElements.prefix(desiredElements.count)) == desiredElements {
-                    // Pop one element.
-                    navigationController.popViewController(animated: shouldAnimate)
-                } else if isFullyRepresentable,
-                          desiredElements.count < currentElements.count,
-                          Array(currentElements.prefix(desiredElements.count)) == desiredElements {
-                    // Pop to a prefix (including root).
-                    if desiredElements.isEmpty {
-                        navigationController.popToRootViewController(animated: shouldAnimate)
-                    } else {
-                        let targetIndex = desiredElements.count
-                        if navigationController.viewControllers.indices.contains(targetIndex) {
-                            let target = navigationController.viewControllers[targetIndex]
-                            navigationController.popToViewController(target, animated: shouldAnimate)
-                        } else {
-                            navigationController.popToRootViewController(animated: shouldAnimate)
-                        }
-                    }
+                    context.coordinator.pendingReconcile = .init(
+                        desiredPath: desiredPath,
+                        disablesAnimations: context.transaction.disablesAnimations,
+                        requestedTransition: requestedTransition
+                    )
                 } else {
-                    // Big diff (or unrepresentable suffix) → rebuild stack from desired path.
-                    let (controllers, _) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
-                    navigationController.setViewControllers([hosting] + controllers, animated: false)
-                }
+                    context.coordinator.isApplyingPath = true
+                    defer { context.coordinator.isApplyingPath = false }
 
-                navigationController.setNavigationBarHidden(true, animated: false)
+                    let currentElements = currentPath.elements
+                    let desiredElements = desiredPath.elements
 
-                // Persist and (asynchronously) normalize the bound path to match the actual UIKit stack
-                // (policy may drop invalid suffix).
-                let (actualPath, _) = restorationContext.syncSnapshot(from: navigationController)
-                if actualPath != desiredRaw {
-                    context.coordinator.scheduleBoundPathUpdate(actualPath)
+                    if isFullyRepresentable,
+                       desiredElements.count == currentElements.count + 1,
+                       Array(desiredElements.prefix(currentElements.count)) == currentElements,
+                       let element = desiredElements.last {
+                        // Push one element.
+                        let requestedTransition: SUINavigationTransition?
+                        if #available(iOS 17.0, *) {
+                            requestedTransition = context.transaction.suinavigationTransition
+                        } else {
+                            requestedTransition = nil
+                        }
+                        if let (controller, defaultTransition) = restorationContext.buildViewController(for: element, navigator: navigator) {
+                            if shouldAnimate {
+                                navigator._applyTransitionIfNeeded(
+                                    requestedTransition ?? defaultTransition,
+                                    to: controller,
+                                    disableBackGesture: element.disableBackGesture
+                                )
+                            }
+                            navigationController.pushViewController(controller, animated: shouldAnimate)
+                        } else {
+                            // If the appended element cannot be built (missing destination, decode failure, etc.),
+                            // keep the current UIKit stack and only normalize the bound path according to policy:
+                            // - `.dropSuffixAndContinue`: drop the invalid suffix (no UIKit changes)
+                            // - `.clearAllAndShowRoot`: pop to root (clear stack)
+                            let (_, sanitizedPath) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
+                            if sanitizedPath.elements.isEmpty && !currentElements.isEmpty {
+                                navigationController.popToRootViewController(animated: false)
+                            }
+                        }
+                    } else if isFullyRepresentable,
+                              currentElements.count == desiredElements.count + 1,
+                              Array(currentElements.prefix(desiredElements.count)) == desiredElements {
+                        // Pop one element.
+                        navigationController.popViewController(animated: shouldAnimate)
+                    } else if isFullyRepresentable,
+                              desiredElements.count < currentElements.count,
+                              Array(currentElements.prefix(desiredElements.count)) == desiredElements {
+                        // Pop to a prefix (including root).
+                        if desiredElements.isEmpty {
+                            navigationController.popToRootViewController(animated: shouldAnimate)
+                        } else {
+                            let targetIndex = desiredElements.count
+                            if navigationController.viewControllers.indices.contains(targetIndex) {
+                                let target = navigationController.viewControllers[targetIndex]
+                                navigationController.popToViewController(target, animated: shouldAnimate)
+                            } else {
+                                navigationController.popToRootViewController(animated: shouldAnimate)
+                            }
+                        }
+                    } else {
+                        // Big diff (or unrepresentable suffix) → rebuild stack from desired path.
+                        let (controllers, _) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
+                        navigationController.setViewControllers([hosting] + controllers, animated: false)
+                    }
+
+                    navigationController.setNavigationBarHidden(true, animated: false)
+
+                    // Persist and (asynchronously) normalize the bound path to match the actual UIKit stack
+                    // (policy may drop invalid suffix).
+                    let (actualPath, _) = restorationContext.syncSnapshot(from: navigationController)
+                    if actualPath != desiredRaw {
+                        context.coordinator.scheduleBoundPathUpdate(actualPath)
+                    }
                 }
             }
         }
