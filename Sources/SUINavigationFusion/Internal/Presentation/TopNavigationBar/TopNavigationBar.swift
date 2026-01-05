@@ -32,6 +32,8 @@ struct TopNavigationBar: ViewModifier {
     func body(content: Content) -> some View {
         let topNavigationBarConfiguration = configurationStore.configuration
 
+        let isBarHidden = visibility[.bar] == .hidden
+
         // NOTE: Avoid conditional view branching for tint application.
         // In SwiftUI, changing the "shape" of the view tree (e.g. applying `.tint` only sometimes)
         // can reset state in surprising places (TabView selections, navigation stacks, etc.).
@@ -45,36 +47,38 @@ struct TopNavigationBar: ViewModifier {
             .navigationBarTitle("", displayMode: .inline)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top, spacing: .zero) {
-                //  Custom top bar view, applied through inset semantics to support scroll-through behavior
-                TopBar(
-                    isRoot: isRoot,
-                    hidesBackButton: hidesBackButton,
-                    leadingView: leadingView,
-                    trailingPrimaryView: trailingPrimaryView,
-                    trailingSecondaryView: trailingSecondaryView,
-                    title: title,
-                    titleTextView: titleTextView,
-                    principalView: principalView,
-                    titleStackSpacing: topNavigationBarConfiguration.titleStackSpacing,
-                    subtitle: subtitle,
-                    currentSubtitleText: currentSubtitleText,
-                    navigationBarOpaque: navigationBarOpaque,
-                    visibility: visibility,
-                    pageTransitionProgress: navigationPageTransitionProgress.progress,
-                    onBack: navigator.pop,
-                    backButtonIcon: topNavigationBarConfiguration.backButtonIcon,
-                    itemTintColor: resolvedTint,
-                    titleFont: topNavigationBarConfiguration.titleFont,
-                    titleFontWeight: topNavigationBarConfiguration.titleFontWeight,
-                    titleFontColor: topNavigationBarConfiguration.titleFontColor,
-                    subtitleFont: topNavigationBarConfiguration.subtitleFont,
-                    subtitleFontWeight: topNavigationBarConfiguration.subtitleFontWeight,
-                    subtitleFontColor: topNavigationBarConfiguration.subtitleFontColor,
-                    backgroundMaterial: topNavigationBarConfiguration.backgroundMaterial,
-                    backgroundColor: topNavigationBarConfiguration.backgroundColor,
-                    scrollDependentBackgroundOpacity: topNavigationBarConfiguration.scrollDependentBackgroundOpacity,
-                    dividerColor: topNavigationBarConfiguration.dividerColor
-                )
+                if !isBarHidden {
+                    // Custom top bar view, applied through inset semantics to support scroll-through behavior.
+                    TopBar(
+                        isRoot: isRoot,
+                        hidesBackButton: hidesBackButton,
+                        leadingView: leadingView,
+                        trailingPrimaryView: trailingPrimaryView,
+                        trailingSecondaryView: trailingSecondaryView,
+                        title: title,
+                        titleTextView: titleTextView,
+                        principalView: principalView,
+                        titleStackSpacing: topNavigationBarConfiguration.titleStackSpacing,
+                        subtitle: subtitle,
+                        currentSubtitleText: currentSubtitleText,
+                        navigationBarOpaque: navigationBarOpaque,
+                        visibility: visibility,
+                        pageTransitionProgress: navigationPageTransitionProgress.progress,
+                        onBack: navigator.pop,
+                        backButtonIcon: topNavigationBarConfiguration.backButtonIcon,
+                        itemTintColor: resolvedTint,
+                        titleFont: topNavigationBarConfiguration.titleFont,
+                        titleFontWeight: topNavigationBarConfiguration.titleFontWeight,
+                        titleFontColor: topNavigationBarConfiguration.titleFontColor,
+                        subtitleFont: topNavigationBarConfiguration.subtitleFont,
+                        subtitleFontWeight: topNavigationBarConfiguration.subtitleFontWeight,
+                        subtitleFontColor: topNavigationBarConfiguration.subtitleFontColor,
+                        backgroundMaterial: topNavigationBarConfiguration.backgroundMaterial,
+                        backgroundColor: topNavigationBarConfiguration.backgroundColor,
+                        scrollDependentBackgroundOpacity: topNavigationBarConfiguration.scrollDependentBackgroundOpacity,
+                        dividerColor: topNavigationBarConfiguration.dividerColor
+                    )
+                }
             }
             // Apply the resolved tint to the whole screen subtree, not only the bar.
             //
@@ -115,9 +119,7 @@ struct TopNavigationBar: ViewModifier {
                 perform: processScrollOffset
             )
             .onPreferenceChange(TopNavigationBarVisibilityPreferenceKey.self) { visibility in
-                if let visibility {
-                    self.visibility = visibility
-                }
+                self.visibility = visibility
             }
     }
     

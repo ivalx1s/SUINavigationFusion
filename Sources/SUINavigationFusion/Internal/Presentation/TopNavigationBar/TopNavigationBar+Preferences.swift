@@ -164,16 +164,11 @@ struct TopNavigationBarPrincipalViewPreferenceKey: @MainActor PreferenceKey {
 }
 
 struct TopNavigationBarVisibilityPreferenceKey: PreferenceKey {
-    static let defaultValue: [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]? = nil
+    static let defaultValue: [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility] = [:]
     static func reduce(
-        value: inout [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]?,
-        nextValue: () -> [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]?
+        value: inout [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility],
+        nextValue: () -> [TopNavigationBar.Section: TopNavigationBar.ComponentVisibility]
     ) {
-        guard let next = nextValue() else { return }
-        if value == nil {
-            value = next
-            return
-        }
-        value?.merge(next, uniquingKeysWith: { _, new in new })
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }

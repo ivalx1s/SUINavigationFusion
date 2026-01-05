@@ -11,6 +11,10 @@ public enum TopNavigationBarVisibility: Hashable, Codable, Sendable {
 /// Use `.trailingPosition(...)` to control a single trailing slot
 /// (for example, hide only the `.secondary` trailing item).
 public enum TopNavigationBarSection: Hashable, Codable, Sendable {
+    /// The whole bar container (including safe-area inset + background).
+    ///
+    /// Use this for full-screen screens (video/photo detail) where you want content to extend to the top edge.
+    case bar
     case leading
     case principal
     case trailing
@@ -28,6 +32,7 @@ public extension View {
         }
         
         let internalSection: TopNavigationBar.Section = switch section {
+        case .bar: .bar
         case .leading: .leading
         case .principal: .principal
         case .trailing: .trailing
