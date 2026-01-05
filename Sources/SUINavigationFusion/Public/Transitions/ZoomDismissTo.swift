@@ -27,6 +27,32 @@ public extension View {
         return self
         #endif
     }
+
+    /// Updates which zoom source/destination ids UIKit should use when dismissing an iOS 18+ zoom transition.
+    ///
+    /// Use this overload when the destination “hero” view id differs from the source id (or when you do not
+    /// want to override the destination id).
+    ///
+    /// - Parameters:
+    ///   - sourceID: The id to zoom back to on dismiss. Must match `.suinavZoomSource(id:)` in the source screen.
+    ///   - destinationID: Optional id of the destination hero element. If provided, the library will use it for:
+    ///     - alignment rect lookups (when `alignmentRectPolicy` uses destination anchor), and
+    ///     - interactive dismiss policy evaluation that needs the destination anchor frame.
+    func suinavZoomDismissTo<SourceID: Hashable, DestinationID: Hashable>(
+        sourceID: SourceID,
+        destinationID: DestinationID?
+    ) -> some View {
+        #if canImport(UIKit)
+        return background(
+            _SUINavigationZoomDismissIDsRegistrar(
+                sourceID: AnyHashable(sourceID),
+                destinationID: destinationID.map(AnyHashable.init)
+            )
+        )
+        #else
+        return self
+        #endif
+    }
 }
 
 #if canImport(UIKit)
@@ -136,4 +162,3 @@ private struct _SUINavigationZoomDismissIDsRegistrar: UIViewRepresentable {
     }
 }
 #endif
-

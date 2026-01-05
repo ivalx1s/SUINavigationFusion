@@ -377,6 +377,38 @@ navigator.push(
 )
 ```
 
+### Dynamic dismiss target (paging / changing content inside the detail screen)
+
+UIKit calls the zoom transition’s `sourceViewProvider` closure both when pushing and when popping.
+If your zoomed screen can change which “item” it represents *without leaving the screen* (for example, paging
+between photos inside a single detail controller), the correct thumbnail to zoom back to can change over time.
+
+To support this, apply `.suinavZoomDismissTo(...)` on the zoomed screen and update it whenever the current item changes:
+
+```swift
+struct PhotoDetail: View {
+    @State var currentID: Photo.ID
+
+    var body: some View {
+        VStack {
+            // The hero element for the currently displayed photo.
+            PhotoHeroView(id: currentID)
+                .suinavZoomDestination(id: currentID)
+
+            // …
+        }
+        // Tell UIKit which thumbnail to zoom back to when dismissing.
+        .suinavZoomDismissTo(id: currentID)
+    }
+}
+```
+
+If you need separate source/destination ids, use:
+
+```swift
+.suinavZoomDismissTo(sourceID: currentID, destinationID: currentID)
+```
+
 ### Path-driven / external router control
 
 In path-driven navigation, `navigator.push(route:transition:)` works the same way: it mutates the bound path and the
