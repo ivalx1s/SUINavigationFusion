@@ -258,6 +258,10 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             navigator: Navigator,
             coordinator: UIViewControllerTransitionCoordinator
         ) {
+            // IMPORTANT:
+            // This is temporary, transition-scoped state. For iOS 18+ fluid transitions the system can
+            // interrupt/cancel at any time, so we must restore the original visibility in the coordinator’s
+            // completion block (not in view controller lifecycle callbacks).
             // Store original `isHidden` states so we don't permanently override user-driven visibility.
             var restoreStates: [ObjectIdentifier: (view: UIView, wasHidden: Bool)] = [:]
 
@@ -317,6 +321,12 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             didShow viewController: UIViewController,
             animated: Bool
         ) {
+            // `didShow` is our "transition finished" hook.
+            //
+            // Keep any temporary transition bookkeeping one-shot and clear it here (or via a transition
+            // coordinator completion). Avoid publishing SwiftUI state synchronously from
+            // `UIViewControllerRepresentable.updateUIViewController` / `View.body`; use deferrals like
+            // `scheduleBoundPathUpdate` to keep SwiftUI’s update cycle stable.
             let startBoundPath = transitionStartBoundPath
             transitionStartBoundPath = nil
             transitionWasInteractive = false

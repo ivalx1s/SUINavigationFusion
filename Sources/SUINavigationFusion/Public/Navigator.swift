@@ -100,6 +100,14 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// corrupt the stack and break animations (especially for iOS 18+ zoom interactive dismiss).
     ///
     /// We queue path mutations and replay them once the transition finishes.
+    ///
+    /// - Important:
+    ///   For iOS 18+ fluid (continuously interactive) transitions, UIKit may transition in non-linear ways
+    ///   (for example: an interrupted push is converted into a pop within the same run loop). Do **not**
+    ///   add long-lived "is transitioning" state or gate new navigation actions based on it.
+    ///   Any temporary transition state must be one-shot, self-contained, and cleaned up in either
+    ///   `UINavigationControllerDelegate.navigationController(_:didShow:animated:)` or a transition
+    ///   coordinator completion callback.
     private var pendingPathMutations: [_PendingPathMutation] = []
 
     /// Tracks the transition coordinator we attached a completion handler to, so we only schedule one flush

@@ -445,6 +445,19 @@ registry.register(PhotoRoute.self, defaultTransition: { route in
   dismiss gestures for that push, regardless of your transition policy. This keeps the library’s “no interactive back”
   contract consistent across edge-swipe back and zoom dismiss.
 
+### Fluid transition invariants (for contributors)
+
+iOS 18+ zoom transitions are continuously interactive and can be interrupted at any time. UIKit may run view controller
+callbacks multiple times and may convert an interrupted push into a pop within the same run loop.
+
+To keep navigation stable:
+
+- Do not gate new navigation actions on “a transition is currently running”.
+- Keep any temporary transition state one-shot and self-contained, and always clean it up in
+  `UINavigationControllerDelegate.navigationController(_:didShow:animated:)` or a transition-coordinator completion.
+- Do not publish SwiftUI state synchronously from `UIViewControllerRepresentable.updateUIViewController` / `View.body`.
+  If UIKit state needs to flow back into SwiftUI, defer it to the next run loop tick.
+
 ### Interactive dismiss policy
 
 UIKit’s zoom transitions can add interactive dismiss gestures (e.g. swipe-down/pinch) that are separate from
