@@ -537,7 +537,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             )
         }
 
-        var options = UIViewController.Transition.ZoomOptions()
+        let options = UIViewController.Transition.ZoomOptions()
 
         // Keep the library’s “no interactive back” contract consistent:
         // - `disableBackGesture` disables edge-swipe back

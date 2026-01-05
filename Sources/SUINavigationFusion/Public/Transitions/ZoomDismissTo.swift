@@ -46,7 +46,7 @@ public extension View {
         return background(
             _SUINavigationZoomDismissIDsRegistrar(
                 sourceID: AnyHashable(sourceID),
-                destinationID: destinationID.map(AnyHashable.init)
+                destinationID: destinationID.map { AnyHashable($0) }
             )
         )
         #else

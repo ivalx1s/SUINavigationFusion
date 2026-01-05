@@ -85,7 +85,7 @@ public extension SUINavigationTransition {
         return .zoom(
             .init(
                 sourceID: AnyHashable(sourceID),
-                destinationID: destinationID.map(AnyHashable.init),
+                destinationID: destinationID.map { AnyHashable($0) },
                 interactiveDismissPolicy: interactiveDismissPolicy,
                 alignmentRectPolicy: effectiveAlignmentRectPolicy,
                 dimmingColor: dimmingColor,
