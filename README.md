@@ -452,7 +452,12 @@ callbacks multiple times and may convert an interrupted push into a pop within t
 
 To keep navigation stable:
 
-- Do not gate new navigation actions on “a transition is currently running”.
+- Apple recommends not blocking pushes/pops just because a transition is running (UIKit handles continuous transitions).
+  However, in SUINavigationFusion’s **path-driven** mode, UIKit mutations are triggered by SwiftUI reconciliation.
+  We observed that attempting to reconcile (push/pop/setViewControllers) while UIKit is still transitioning can corrupt
+  the navigation stack and break animations (especially for iOS 18+ zoom interactive dismiss). For correctness, the
+  library **serializes** path-driven mutations by queueing them and applying once the transition finishes
+  (`didShow` / transition-coordinator completion).
 - Keep any temporary transition state one-shot and self-contained, and always clean it up in
   `UINavigationControllerDelegate.navigationController(_:didShow:animated:)` or a transition-coordinator completion.
 - Do not publish SwiftUI state synchronously from `UIViewControllerRepresentable.updateUIViewController` / `View.body`.

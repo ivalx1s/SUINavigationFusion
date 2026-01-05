@@ -194,6 +194,11 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         // If UIKit is currently transitioning (interactive pop, zoom dismiss, animated push, etc.),
         // do not mutate the bound path immediately: SwiftUI would try to reconcile UIKit while the transition
         // is still active, which can lead to stack corruption and broken animations.
+        //
+        // Note: Apple recommends not blocking navigation just because a transition is running. In a UIKit-only
+        // app that advice is correct. In path-driven navigation, though, UIKit stack updates happen indirectly
+        // via SwiftUI reconciliation, and UIKit is not re-entrant. We therefore serialize path mutations and
+        // flush them deterministically when the transition completes.
         if let navigationController = currentNavigationController(),
            let coordinator = navigationController.transitionCoordinator {
             pendingPathMutations.append(.init(animated: animated, transition: transition, mutation: mutation))

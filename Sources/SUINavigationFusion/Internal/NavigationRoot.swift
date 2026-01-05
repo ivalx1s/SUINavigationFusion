@@ -699,6 +699,12 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 // interactive dismiss, where the completion phase can be relatively long.
                 //
                 // If UIKit is currently transitioning, stash the desired path and apply it once `didShow` fires.
+                //
+                // Note: Apple’s fluid transition guidance says “don’t block navigation just because a transition
+                // is running”. In a UIKit-driven stack, UIKit can sequence push/pop operations internally.
+                // In path-driven navigation, however, UIKit mutations are triggered by SwiftUI reconciliation,
+                // and re-entrant updates have been observed to corrupt the stack. For correctness we serialize
+                // reconciliation and only apply path changes once UIKit reports the transition finished.
                 if navigationController.transitionCoordinator != nil {
                     let requestedTransition: SUINavigationTransition?
                     if #available(iOS 17.0, *) {
