@@ -380,3 +380,95 @@ private extension CGRect {
         )
     }
 }
+
+// MARK: - Dimming (behind the zoomed controller)
+
+/// A platform-independent representation of a UIKit blur effect style.
+///
+/// UIKit’s zoom transition API uses a `UIBlurEffect` instance (`dimmingVisualEffect`) to blur content behind the
+/// zoomed-in controller. SUINavigationFusion keeps the public API SwiftUI-friendly by representing the blur as a
+/// value type and mapping it to `UIBlurEffect.Style` internally.
+public enum SUINavigationBlurEffectStyle: Hashable, Sendable {
+    case extraLight
+    case light
+    case dark
+    case regular
+    case prominent
+
+    case systemUltraThinMaterial
+    case systemThinMaterial
+    case systemMaterial
+    case systemThickMaterial
+    case systemChromeMaterial
+
+    case systemUltraThinMaterialLight
+    case systemThinMaterialLight
+    case systemMaterialLight
+    case systemThickMaterialLight
+    case systemChromeMaterialLight
+
+    case systemUltraThinMaterialDark
+    case systemThinMaterialDark
+    case systemMaterialDark
+    case systemThickMaterialDark
+    case systemChromeMaterialDark
+}
+
+/// Visual effect applied behind the zoomed controller during an iOS 18+ zoom transition.
+///
+/// In UIKit terms, this maps to `UIZoomTransitionOptions.dimmingVisualEffect`.
+public enum SUINavigationZoomDimmingVisualEffect: Hashable, Sendable {
+    /// Apply a blur effect to the background.
+    case blur(style: SUINavigationBlurEffectStyle)
+}
+
+#if canImport(UIKit)
+import UIKit
+
+extension SUINavigationBlurEffectStyle {
+    var _uikitStyle: UIBlurEffect.Style {
+        switch self {
+        case .extraLight:
+            return .extraLight
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        case .regular:
+            return .regular
+        case .prominent:
+            return .prominent
+        case .systemUltraThinMaterial:
+            return .systemUltraThinMaterial
+        case .systemThinMaterial:
+            return .systemThinMaterial
+        case .systemMaterial:
+            return .systemMaterial
+        case .systemThickMaterial:
+            return .systemThickMaterial
+        case .systemChromeMaterial:
+            return .systemChromeMaterial
+        case .systemUltraThinMaterialLight:
+            return .systemUltraThinMaterialLight
+        case .systemThinMaterialLight:
+            return .systemThinMaterialLight
+        case .systemMaterialLight:
+            return .systemMaterialLight
+        case .systemThickMaterialLight:
+            return .systemThickMaterialLight
+        case .systemChromeMaterialLight:
+            return .systemChromeMaterialLight
+        case .systemUltraThinMaterialDark:
+            return .systemUltraThinMaterialDark
+        case .systemThinMaterialDark:
+            return .systemThinMaterialDark
+        case .systemMaterialDark:
+            return .systemMaterialDark
+        case .systemThickMaterialDark:
+            return .systemThickMaterialDark
+        case .systemChromeMaterialDark:
+            return .systemChromeMaterialDark
+        }
+    }
+}
+#endif

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// A high-level navigation transition request.
 ///
@@ -29,17 +30,23 @@ public extension SUINavigationTransition {
     ///   - id: Identifier shared by the source and destination anchors.
     ///   - interactiveDismissPolicy: Controls whether zoom interactive dismiss gestures are allowed to begin.
     ///   - alignmentRectPolicy: Controls the alignment rect used by UIKit to align the zoom animation.
+    ///   - dimmingColor: Background tint applied behind the zoomed controller (`nil` uses UIKit default).
+    ///   - dimmingVisualEffect: Background visual effect applied behind the zoomed controller (`nil` uses UIKit default).
     static func zoom<ID: Hashable>(
         id: ID,
         interactiveDismissPolicy: SUINavigationZoomInteractiveDismissPolicy = .systemDefault,
-        alignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy = .destinationAnchor(fallback: .zoomedViewBounds)
+        alignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy = .destinationAnchor(fallback: .zoomedViewBounds),
+        dimmingColor: Color? = nil,
+        dimmingVisualEffect: SUINavigationZoomDimmingVisualEffect? = nil
     ) -> Self {
         .zoom(
             .init(
                 sourceID: AnyHashable(id),
                 destinationID: AnyHashable(id),
                 interactiveDismissPolicy: interactiveDismissPolicy,
-                alignmentRectPolicy: alignmentRectPolicy
+                alignmentRectPolicy: alignmentRectPolicy,
+                dimmingColor: dimmingColor,
+                dimmingVisualEffect: dimmingVisualEffect
             )
         )
     }
@@ -55,11 +62,15 @@ public extension SUINavigationTransition {
     ///   - interactiveDismissPolicy: Controls whether zoom interactive dismiss gestures are allowed to begin.
     ///   - alignmentRectPolicy: Controls the alignment rect used by UIKit.
     ///     If omitted and `destinationID` is provided, the library defaults to `.destinationAnchor(...)`.
+    ///   - dimmingColor: Background tint applied behind the zoomed controller (`nil` uses UIKit default).
+    ///   - dimmingVisualEffect: Background visual effect applied behind the zoomed controller (`nil` uses UIKit default).
     static func zoom<SourceID: Hashable, DestinationID: Hashable>(
         sourceID: SourceID,
         destinationID: DestinationID? = nil,
         interactiveDismissPolicy: SUINavigationZoomInteractiveDismissPolicy = .systemDefault,
-        alignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy? = nil
+        alignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy? = nil,
+        dimmingColor: Color? = nil,
+        dimmingVisualEffect: SUINavigationZoomDimmingVisualEffect? = nil
     ) -> Self {
         let effectiveAlignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy
         if let alignmentRectPolicy {
@@ -76,7 +87,9 @@ public extension SUINavigationTransition {
                 sourceID: AnyHashable(sourceID),
                 destinationID: destinationID.map(AnyHashable.init),
                 interactiveDismissPolicy: interactiveDismissPolicy,
-                alignmentRectPolicy: effectiveAlignmentRectPolicy
+                alignmentRectPolicy: effectiveAlignmentRectPolicy,
+                dimmingColor: dimmingColor,
+                dimmingVisualEffect: dimmingVisualEffect
             )
         )
     }
@@ -106,16 +119,30 @@ public struct SUINavigationZoomTransition {
     ///
     /// This maps to UIKit’s `UIZoomTransitionOptions.alignmentRectProvider`.
     public var alignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy
+    /// Background tint applied behind the zoomed controller.
+    ///
+    /// This maps to UIKit’s `UIZoomTransitionOptions.dimmingColor`.
+    /// Pass `nil` to use UIKit’s default.
+    public var dimmingColor: Color?
+    /// Visual effect applied behind the zoomed controller (blur).
+    ///
+    /// This maps to UIKit’s `UIZoomTransitionOptions.dimmingVisualEffect`.
+    /// Pass `nil` to use UIKit’s default (typically no blur).
+    public var dimmingVisualEffect: SUINavigationZoomDimmingVisualEffect?
 
     public init(
         sourceID: AnyHashable,
         destinationID: AnyHashable? = nil,
         interactiveDismissPolicy: SUINavigationZoomInteractiveDismissPolicy = .systemDefault,
-        alignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy = .systemDefault
+        alignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy = .systemDefault,
+        dimmingColor: Color? = nil,
+        dimmingVisualEffect: SUINavigationZoomDimmingVisualEffect? = nil
     ) {
         self.sourceID = sourceID
         self.destinationID = destinationID
         self.interactiveDismissPolicy = interactiveDismissPolicy
         self.alignmentRectPolicy = alignmentRectPolicy
+        self.dimmingColor = dimmingColor
+        self.dimmingVisualEffect = dimmingVisualEffect
     }
 }

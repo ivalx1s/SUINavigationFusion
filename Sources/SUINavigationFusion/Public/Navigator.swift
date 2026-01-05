@@ -580,6 +580,17 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             }
         }
 
+        if let dimmingColor = zoom.dimmingColor {
+            options.dimmingColor = UIColor(dimmingColor)
+        }
+
+        if let dimmingVisualEffect = zoom.dimmingVisualEffect {
+            switch dimmingVisualEffect {
+            case .blur(let style):
+                options.dimmingVisualEffect = UIBlurEffect(style: style._uikitStyle)
+            }
+        }
+
         controller.preferredTransition = .zoom(options: options) { [weak self] _ in
             self?._zoomViewRegistry.sourceView(for: zoom.sourceID)
         }

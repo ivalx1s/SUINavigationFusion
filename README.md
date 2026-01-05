@@ -456,6 +456,22 @@ transition: .zoom(
 transition: .zoom(id: photo.id, alignmentRectPolicy: .custom { $0.zoomedSafeAreaBounds })
 ```
 
+### Dimming (color / blur behind the zoomed controller)
+
+UIKit can apply a tint and/or a blur behind the zoomed controller during the zoom transition.
+
+SUINavigationFusion exposes this via:
+- `dimmingColor: Color?` (`nil` uses UIKit default)
+- `dimmingVisualEffect: SUINavigationZoomDimmingVisualEffect?` (`nil` uses UIKit default, typically “no blur”)
+
+```swift
+transition: .zoom(
+  id: photo.id,
+  dimmingColor: .black.opacity(0.35),
+  dimmingVisualEffect: .blur(style: .systemUltraThinMaterial)
+)
+```
+
 ## Title & subtitle
 
 Use plain strings: .topNavigationBarTitle("Title"), .topNavigationBarSubtitle("Subtitle") or provide fully styled Text (overrides config fonts/colors):
