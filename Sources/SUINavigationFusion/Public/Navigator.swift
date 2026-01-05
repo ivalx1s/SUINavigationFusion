@@ -327,7 +327,12 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         )
 
         if animated {
-            _applyTransitionIfNeeded(transition, to: controller, disableBackGesture: disableBackGesture)
+            _applyTransitionIfNeeded(
+                transition,
+                to: controller,
+                disableBackGesture: disableBackGesture,
+                sourceViewController: navigationController.topViewController
+            )
         }
         navigationController.pushViewController(controller, animated: animated)
         navigationController.setNavigationBarHidden(true, animated: false)
@@ -415,7 +420,12 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         )
 
         if animated {
-            _applyTransitionIfNeeded(effectiveTransition, to: controller, disableBackGesture: disableBackGesture)
+            _applyTransitionIfNeeded(
+                effectiveTransition,
+                to: controller,
+                disableBackGesture: disableBackGesture,
+                sourceViewController: navigationController.topViewController
+            )
         }
         navigationController.pushViewController(controller, animated: animated)
         navigationController.setNavigationBarHidden(true, animated: false)
@@ -503,15 +513,29 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     func _applyTransitionIfNeeded(
         _ transition: SUINavigationTransition?,
         to controller: UIViewController,
-        disableBackGesture: Bool
+        disableBackGesture: Bool,
+        sourceViewController: UIViewController? = nil
     ) {
         #if canImport(UIKit)
         guard let transition else { return }
         guard case .zoom(let zoom) = transition else { return }
         guard #available(iOS 18.0, *) else { return }
 
-        // Avoid surprising “zoom from center” by requiring the source view to exist at push time.
-        guard _zoomViewRegistry.sourceView(for: zoom.sourceID) != nil else { return }
+        // Avoid surprising “zoom from center” by requiring the source view to exist *in the current source VC*
+        // at push time. If we return a view from a different hierarchy, UIKit can fall back to a degraded animation
+        // (often perceived as a fade).
+        if let sourceRoot = sourceViewController?.view {
+            guard _zoomViewRegistry.sourceView(for: zoom.sourceID, inHierarchyOf: sourceRoot) != nil else { return }
+        } else {
+            guard _zoomViewRegistry.sourceView(for: zoom.sourceID) != nil else { return }
+        }
+
+        if let provider = controller as? _NavigationZoomTransitionInfoProviding {
+            provider._suinavZoomTransitionInfo = _NavigationZoomTransitionInfo(
+                sourceID: zoom.sourceID,
+                destinationID: zoom.destinationID
+            )
+        }
 
         var options = UIViewController.Transition.ZoomOptions()
 
@@ -534,8 +558,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
 
                 let destinationAnchorFrame: CGRect?
                 if let destinationID = zoom.destinationID,
-                   let destinationView = self._zoomViewRegistry.destinationView(for: destinationID),
-                   destinationView.isDescendant(of: controllerView) {
+                   let destinationView = self._zoomViewRegistry.destinationView(for: destinationID, inHierarchyOf: controllerView) {
                     destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: controllerView)
                 } else {
                     destinationAnchorFrame = nil
@@ -562,8 +585,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
 
                 let destinationAnchorFrame: CGRect?
                 if let destinationID = zoom.destinationID,
-                   let destinationView = self._zoomViewRegistry.destinationView(for: destinationID),
-                   destinationView.isDescendant(of: zoomedView) {
+                   let destinationView = self._zoomViewRegistry.destinationView(for: destinationID, inHierarchyOf: zoomedView) {
                     destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: zoomedView)
                 } else {
                     destinationAnchorFrame = nil
@@ -591,8 +613,14 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             }
         }
 
-        controller.preferredTransition = .zoom(options: options) { [weak self] _ in
-            self?._zoomViewRegistry.sourceView(for: zoom.sourceID)
+        controller.preferredTransition = .zoom(options: options) { [weak self] providerContext in
+            guard let self else { return nil }
+            assert(Thread.isMainThread)
+
+            // UIKit calls this closure when it needs the “source” view (both on push and on pop).
+            // Use the provided source view controller to select the correct anchor view.
+            guard let sourceRoot = providerContext.sourceViewController.view else { return nil }
+            return self._zoomViewRegistry.sourceView(for: zoom.sourceID, inHierarchyOf: sourceRoot)
         }
         #endif
     }

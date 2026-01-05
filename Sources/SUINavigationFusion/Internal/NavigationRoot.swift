@@ -199,6 +199,35 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             } else {
                 isPushTransition = true
             }
+
+            // iOS 18+ zoom transitions behave most “native” when the source/destination anchor views are hidden
+            // during the transition. Otherwise, UIKit can cross-fade the real views with the transition snapshot,
+            // which breaks the hero continuity (especially noticeable during interactive dismiss).
+            //
+            // This is the UIKit equivalent of SwiftUI hiding the `matchedTransitionSource` / destination views
+            // while animating the “matched geometry” snapshot.
+            if #available(iOS 18.0, *),
+               let navigator = injectedNavigator,
+               let fromVC = transitionContext.viewController(forKey: .from),
+               let toVC = transitionContext.viewController(forKey: .to) {
+                let zoomInfo: _NavigationZoomTransitionInfo?
+                if isPushTransition {
+                    zoomInfo = (toVC as? _NavigationZoomTransitionInfoProviding)?._suinavZoomTransitionInfo
+                } else {
+                    zoomInfo = (fromVC as? _NavigationZoomTransitionInfoProviding)?._suinavZoomTransitionInfo
+                }
+
+                if let zoomInfo {
+                    installZoomAnchorVisibilityHooks(
+                        zoomInfo: zoomInfo,
+                        isPushTransition: isPushTransition,
+                        from: fromVC,
+                        to: toVC,
+                        navigator: navigator,
+                        coordinator: transitionContext
+                    )
+                }
+            }
             
             if let from = transitionContext.viewController(forKey: .from) as? NavigationTransitionProgressHolder,
                let to   = transitionContext.viewController(forKey: .to)   as? NavigationTransitionProgressHolder {
@@ -218,6 +247,55 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 self?.clamp(cancelled: context.isCancelled)
                 self?.stopDisplayLink()
             }
+        }
+
+        @available(iOS 18.0, *)
+        private func installZoomAnchorVisibilityHooks(
+            zoomInfo: _NavigationZoomTransitionInfo,
+            isPushTransition: Bool,
+            from fromViewController: UIViewController,
+            to toViewController: UIViewController,
+            navigator: Navigator,
+            coordinator: UIViewControllerTransitionCoordinator
+        ) {
+            // Store original `isHidden` states so we don't permanently override user-driven visibility.
+            var restoreStates: [ObjectIdentifier: (view: UIView, wasHidden: Bool)] = [:]
+
+            coordinator.animate(alongsideTransition: { _ in
+                guard let fromRoot = fromViewController.view, let toRoot = toViewController.view else { return }
+
+                let sourceHierarchyRoot = isPushTransition ? fromRoot : toRoot
+                let destinationHierarchyRoot = isPushTransition ? toRoot : fromRoot
+
+                UIView.performWithoutAnimation {
+                    let sourceViews = navigator._zoomViewRegistry.sourceViews(
+                        for: zoomInfo.sourceID,
+                        inHierarchyOf: sourceHierarchyRoot
+                    )
+
+                    var viewsToHide = sourceViews
+                    if let destinationID = zoomInfo.destinationID {
+                        viewsToHide += navigator._zoomViewRegistry.destinationViews(
+                            for: destinationID,
+                            inHierarchyOf: destinationHierarchyRoot
+                        )
+                    }
+
+                    for view in viewsToHide {
+                        let key = ObjectIdentifier(view)
+                        if restoreStates[key] == nil {
+                            restoreStates[key] = (view: view, wasHidden: view.isHidden)
+                        }
+                        view.isHidden = true
+                    }
+                }
+            }, completion: { _ in
+                UIView.performWithoutAnimation {
+                    for entry in restoreStates.values {
+                        entry.view.isHidden = entry.wasHidden
+                    }
+                }
+            })
         }
 
         public func navigationController(
@@ -629,10 +707,12 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         }
                         if let (controller, defaultTransition) = restorationContext.buildViewController(for: element, navigator: navigator) {
                             if shouldAnimate {
+                                let sourceViewController = navigationController.topViewController
                                 navigator._applyTransitionIfNeeded(
                                     requestedTransition ?? defaultTransition,
                                     to: controller,
-                                    disableBackGesture: element.disableBackGesture
+                                    disableBackGesture: element.disableBackGesture,
+                                    sourceViewController: sourceViewController
                                 )
                             }
                             navigationController.pushViewController(controller, animated: shouldAnimate)

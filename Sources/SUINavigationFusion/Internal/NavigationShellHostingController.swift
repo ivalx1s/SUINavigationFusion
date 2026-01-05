@@ -15,6 +15,10 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
     let navigationPageTransitionProgress: NavigationPageTransitionProgress
     let disablesBackGesture: Bool
     let _restorationInfo: _NavigationRestorationInfo?
+    /// Ephemeral zoom transition metadata set when this controller is pushed with `.zoom(...)`.
+    ///
+    /// Used by `_NavigationRoot.Coordinator` to hide/show anchor views during the transition.
+    var _suinavZoomTransitionInfo: _NavigationZoomTransitionInfo?
     
     init(
         rootView: Content,
@@ -25,6 +29,7 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
         self.navigationPageTransitionProgress = navigationPageTransitionProgress
         self.disablesBackGesture = disablesBackGesture
         self._restorationInfo = restorationInfo
+        self._suinavZoomTransitionInfo = nil
         super.init(rootView: rootView)
     }
     
@@ -47,3 +52,4 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
 }
 
 extension NavigationShellHostingController: _NavigationRestorable {}
+extension NavigationShellHostingController: _NavigationZoomTransitionInfoProviding {}
