@@ -113,62 +113,12 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
             self.kind = kind
         }
 
-        /// Resolves the UIKit view we should register as a zoom anchor for this SwiftUI subtree.
-        ///
-        /// SwiftUI often inserts `UIViewRepresentable` content into intermediate hosting containers that do **not**
-        /// include the “real” rendered content of the view you're modifying.
-        ///
-        /// For example, when using `.background(...)`, SwiftUI may create a container that hosts only the background
-        /// view (our capture view), while the actual content lives in a sibling container.
-        ///
-        /// UIKit's zoom transition needs a view whose snapshot represents the visible hero element, and we also hide
-        /// that same view during the transition to avoid seeing both:
-        /// - the static original thumbnail, and
-        /// - the animated zoom snapshot.
-        ///
-        /// Therefore we walk up the superview chain and pick the first ancestor that:
-        /// - is sized like the capture view (when possible), and
-        /// - appears to be a composite container (has more than one subview).
-        ///
-        /// This is a best-effort heuristic; it keeps the API SwiftUI-friendly without requiring an introspection
-        /// dependency, while producing UIKit views that behave like SwiftUI's `matchedTransitionSource`.
-        private func resolveAnchorContainerView(for captureView: UIView) -> UIView {
-            let referenceSize = captureView.bounds.size
-
-            var bestCandidate: UIView?
-            var current: UIView? = captureView
-
-            // Keep the search bounded — SwiftUI view trees can be deep.
-            for _ in 0..<12 {
-                guard let parent = current?.superview else { break }
-
-                // We want a container that includes more than just our capture view.
-                // The first composite container is a good fallback.
-                if bestCandidate == nil, parent.subviews.count > 1, parent.bounds.size != .zero {
-                    bestCandidate = parent
-                }
-
-                // Prefer a composite container that matches the capture view's size.
-                if
-                    parent.subviews.count > 1,
-                    referenceSize != .zero,
-                    parent.bounds.size == referenceSize
-                {
-                    return parent
-                }
-
-                current = parent
-            }
-
-            return bestCandidate ?? captureView.superview ?? captureView
-        }
-
         func registerIfPossible(anchorView: UIView) {
             guard let navigator else { return }
 
-            // We want to register a view whose snapshot actually represents the SwiftUI subtree
-            // (and which we can safely hide during the transition to avoid duplicate heroes).
-            let target = resolveAnchorContainerView(for: anchorView)
+            // We want to register a view that has the “real” size of the SwiftUI subtree.
+            // In practice, the capture view itself is tiny/empty, while its superview is the container.
+            let target = anchorView.superview ?? anchorView
             lastRegisteredView = target
 
             switch kind {
