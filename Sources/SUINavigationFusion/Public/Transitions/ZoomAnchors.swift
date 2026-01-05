@@ -82,11 +82,14 @@ private struct _SUINavigationZoomSourceModifier<ID: Hashable>: ViewModifier {
             .overlay(
                 _SUINavigationZoomAnchorRegistrar(id: AnyHashable(id), kind: .source)
                     .allowsHitTesting(false)
-                    // Keep the capture view invisible when not zooming.
-                    //
-                    // The capture view is only meant to be used as a temporary transition snapshot container.
-                    // If we leave it visible after the transition, the last snapshot can “freeze” the cell.
-                    .opacity(isZooming ? 1 : 0)
+                // Note: do not gate this overlay’s visibility with SwiftUI `.opacity`.
+                //
+                // UIKit asks for the source view synchronously when starting a zoom transition. SwiftUI’s view
+                // update (driven by `_activeZoomSourceID`) can land on the next run loop tick, which can cause
+                // the capture view to be snapshotted while still visually transparent (“invisible lift-off”).
+                //
+                // Instead, we control the backing `UIView`’s alpha in `updateUIView`, and additionally force
+                // it visible in `Navigator._applyTransitionIfNeeded` right before returning it to UIKit.
             )
     }
 }
@@ -125,6 +128,17 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
             Task { @MainActor in
                 coordinator?.registerIfPossible(anchorView: view)
             }
+        }
+
+        // Keep the capture view visually hidden outside of a transition.
+        //
+        // The capture view is a temporary snapshot container for UIKit’s zoom transition. If it remains visible
+        // after a pop, it can “freeze” the cell by covering the real SwiftUI content with the last snapshot.
+        //
+        // We derive visibility from `_activeZoomSourceID` (set just-in-time in the zoom source provider).
+        // This is intentionally done at the UIKit view level to avoid SwiftUI update timing races.
+        if kind == .source {
+            uiView.alpha = (navigator._activeZoomSourceID == id) ? 1 : 0
         }
 
         // Register immediately when possible. This reduces flakiness for transitions that start soon after

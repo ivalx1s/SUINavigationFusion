@@ -158,12 +158,15 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 self.completionCurve          = context.completionCurve
                 self.completionVelocity       = context.completionVelocity
 
-                // If a zoom interactive dismiss finished or was cancelled, restore the source view immediately.
+                // If a zoom interactive dismiss was cancelled, restore the source view immediately.
                 //
-                // For iOS 18+ fluid zoom transitions, `didShow` can fire noticeably later than the moment the UI
-                // looks “done”. Clearing the zoom state here keeps the source list/grid responsive right after the
-                // gesture ends (and avoids leaving the tapped cell hidden).
-                self.injectedNavigator?._activeZoomSourceID = nil
+                // If the dismiss succeeds, UIKit continues animating the “hero” snapshot during the completion
+                // phase. Clearing `_activeZoomSourceID` too early makes the real source content re-appear under
+                // the moving snapshot (“ghosting”). For successful dismissals, we keep the source hidden until
+                // `didShow` (transition completion).
+                if context.isCancelled {
+                    self.injectedNavigator?._activeZoomSourceID = nil
+                }
 
                 // Path-driven stacks are “NavigationStack-like”: an external router owns `SUINavigationPath`,
                 // and UIKit must follow it. For gesture-driven navigation (interactive pop/zoom dismiss),
