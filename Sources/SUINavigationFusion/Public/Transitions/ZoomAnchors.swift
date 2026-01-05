@@ -17,7 +17,14 @@ public extension View {
     ///   Prefer ids that are unique among currently visible source views.
     func suinavZoomSource<ID: Hashable>(id: ID) -> some View {
         #if canImport(UIKit)
-        return background(_SUINavigationZoomAnchorRegistrar(id: AnyHashable(id), kind: .source))
+        // Prefer `.overlay` over `.background` here.
+        //
+        // In SwiftUI, `.background(...)` is often hosted in a separate UIKit container that does **not** include
+        // the view’s rendered content. If we register that container as the zoom source, UIKit will snapshot a
+        // blank view and the “hero” effect won’t be visible (the real thumbnail stays in place).
+        //
+        // `.overlay(...)` more consistently ends up inside a container that also hosts the view’s rendered content.
+        return overlay(_SUINavigationZoomAnchorRegistrar(id: AnyHashable(id), kind: .source))
         #else
         return self
         #endif
@@ -40,7 +47,7 @@ public extension View {
     ///   Destination anchors are optional, but they often improve visual quality for complex detail screens.
     func suinavZoomDestination<ID: Hashable>(id: ID) -> some View {
         #if canImport(UIKit)
-        return background(_SUINavigationZoomAnchorRegistrar(id: AnyHashable(id), kind: .destination))
+        return overlay(_SUINavigationZoomAnchorRegistrar(id: AnyHashable(id), kind: .destination))
         #else
         return self
         #endif
@@ -116,9 +123,26 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
         func registerIfPossible(anchorView: UIView) {
             guard let navigator else { return }
 
-            // We want to register a view that has the “real” size of the SwiftUI subtree.
-            // In practice, the capture view itself is tiny/empty, while its superview is the container.
-            let target = anchorView.superview ?? anchorView
+            // We want to register a UIKit view whose snapshot represents the SwiftUI subtree.
+            //
+            // Even with `.overlay`, SwiftUI can introduce intermediate containers. A common pattern is:
+            // - an intermediate container that hosts only our capture view, and
+            // - a parent container that hosts both the real content and our capture view.
+            //
+            // If we register the intermediate container, UIKit will animate a blank view.
+            // Prefer the immediate parent container *only when* it matches the capture container size.
+            let captureContainer = anchorView.superview ?? anchorView
+            let target: UIView
+            if
+                captureContainer.subviews.count == 1,
+                let parent = captureContainer.superview,
+                parent.bounds.size != .zero,
+                parent.bounds.size == captureContainer.bounds.size
+            {
+                target = parent
+            } else {
+                target = captureContainer
+            }
             lastRegisteredView = target
 
             switch kind {
