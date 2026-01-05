@@ -17,7 +17,14 @@ public extension View {
     ///   Prefer ids that are unique among currently visible source views.
     func suinavZoomSource<ID: Hashable>(id: ID) -> some View {
         #if canImport(UIKit)
-        return background(_SUINavigationZoomAnchorRegistrar(id: AnyHashable(id), kind: .source))
+        // UIKit’s zoom transition requires a `UIView` to animate from.
+        //
+        // SwiftUI doesn’t expose the backing UIKit view for a `View`, so we insert a dedicated capture view that:
+        // - is registered as the zoom source (`Navigator._zoomViewRegistry`)
+        // - can display a snapshot of the *real* SwiftUI content during the transition
+        //
+        // The actual snapshot is captured right before the transition starts (see `Navigator._applyTransitionIfNeeded`).
+        return modifier(_SUINavigationZoomSourceModifier(id: id))
         #else
         return self
         #endif
@@ -50,6 +57,37 @@ public extension View {
 #if canImport(UIKit)
 import UIKit
 
+/// A modifier that installs a zoom capture view and hides the original content while zooming.
+///
+/// The goal is to mimic SwiftUI’s `matchedTransitionSource` behavior:
+/// - the source view is visually removed during the transition
+/// - UIKit animates a snapshot in its place
+///
+/// We can't reliably find “the real UIKit view” for a SwiftUI subtree, so the library instead:
+/// 1) overlays a dedicated `_SUINavigationZoomCaptureView`
+/// 2) captures a snapshot of the underlying screen and places it into that capture view
+/// 3) hides the original SwiftUI content by setting opacity to 0 while the transition is active
+///
+/// This design trades some overhead (one snapshot per zoom transition) for correctness and predictable behavior.
+private struct _SUINavigationZoomSourceModifier<ID: Hashable>: ViewModifier {
+    let id: ID
+    @EnvironmentObject private var navigator: Navigator
+
+    func body(content: Content) -> some View {
+        let isZooming = navigator._activeZoomSourceID == AnyHashable(id)
+
+        return content
+            // Hide the real content during the transition so it doesn't stay behind the moving snapshot.
+            .opacity(isZooming ? 0 : 1)
+            // Keep the capture view in the hierarchy so UIKit can snapshot it.
+            // The view is transparent when no snapshot is installed.
+            .overlay(
+                _SUINavigationZoomAnchorRegistrar(id: AnyHashable(id), kind: .source)
+                    .allowsHitTesting(false)
+            )
+    }
+}
+
 private enum _SUINavigationZoomAnchorKind {
     case source
     case destination
@@ -69,14 +107,14 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
         Coordinator(id: id, kind: kind)
     }
 
-    func makeUIView(context: Context) -> _CaptureView {
-        let view = _CaptureView()
+    func makeUIView(context: Context) -> _SUINavigationZoomCaptureView {
+        let view = _SUINavigationZoomCaptureView()
         view.isUserInteractionEnabled = false
         view.backgroundColor = .clear
         return view
     }
 
-    func updateUIView(_ uiView: _CaptureView, context: Context) {
+    func updateUIView(_ uiView: _SUINavigationZoomCaptureView, context: Context) {
         Task { @MainActor in
             context.coordinator.navigator = navigator
         }
@@ -94,7 +132,7 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
         }
     }
 
-    static func dismantleUIView(_ uiView: _CaptureView, coordinator: Coordinator) {
+    static func dismantleUIView(_ uiView: _SUINavigationZoomCaptureView, coordinator: Coordinator) {
         Task { @MainActor in
             coordinator.unregisterIfNeeded()
         }
@@ -116,9 +154,14 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
         func registerIfPossible(anchorView: UIView) {
             guard let navigator else { return }
 
-            // We want to register a view that has the “real” size of the SwiftUI subtree.
-            // In practice, the capture view itself is tiny/empty, while its superview is the container.
-            let target = anchorView.superview ?? anchorView
+            // Register the capture view itself.
+            //
+            // For `.source`, UIKit will animate (snapshot) this view, so it needs to be:
+            // - sized like the SwiftUI subtree
+            // - able to display a snapshot image
+            //
+            // For `.destination`, we use the capture view primarily for geometry (alignment rect).
+            let target = anchorView
             lastRegisteredView = target
 
             switch kind {
@@ -142,19 +185,57 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
         }
     }
 
-    /// A view that notifies when SwiftUI attaches/relayouts it.
-    final class _CaptureView: UIView {
-        var onUpdate: ((UIView) -> Void)?
+}
 
-        override func didMoveToSuperview() {
-            super.didMoveToSuperview()
-            onUpdate?(self)
-        }
+/// A UIKit view used as a zoom source/destination anchor.
+///
+/// For zoom transitions, the library installs a snapshot image into this view so UIKit has visible content to animate.
+final class _SUINavigationZoomCaptureView: UIView {
+    var onUpdate: ((UIView) -> Void)?
 
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            onUpdate?(self)
-        }
+    private let snapshotImageView: UIImageView = {
+        let view = UIImageView()
+        view.contentMode = .scaleAspectFill
+        view.clipsToBounds = true
+        return view
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        addSubview(snapshotImageView)
+        snapshotImageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            snapshotImageView.topAnchor.constraint(equalTo: topAnchor),
+            snapshotImageView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            snapshotImageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            snapshotImageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+    }
+
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        onUpdate?(self)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onUpdate?(self)
+    }
+
+    /// Sets the snapshot that UIKit should animate for the next zoom transition.
+    ///
+    /// If `nil`, the view becomes visually empty (transparent).
+    func setSnapshotImage(_ image: UIImage?) {
+        snapshotImageView.image = image
     }
 }
 #endif

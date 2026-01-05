@@ -119,6 +119,14 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     /// SwiftUI code registers anchors via `.suinavZoomSource(id:)` / `.suinavZoomDestination(id:)`.
     /// The library then resolves the actual `UIView` at transition time (push + pop) by id.
     let _zoomViewRegistry = _NavigationZoomViewRegistry()
+
+    /// The currently active zoom source id, if a zoom transition is in progress.
+    ///
+    /// Used by `.suinavZoomSource(id:)` to temporarily hide the real SwiftUI content while UIKit animates
+    /// a snapshot-based zoom transition.
+    ///
+    /// This is ephemeral transition state and must be cleared when the transition finishes/cancels.
+    @Published var _activeZoomSourceID: AnyHashable? = nil
     
     // MARK: - Equatable
     
@@ -657,17 +665,53 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             // We support this by letting the zoomed SwiftUI screen publish its current id into the hosting
             // controller (see `.suinavZoomDismissTo(id:)`). If no override is set, we fall back to the static
             // `zoom.sourceID` captured when the controller was pushed.
-            let overrideSourceID = (providerContext.zoomedViewController as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicSourceID
-            if
-                let overrideSourceID,
-                let view = self._zoomViewRegistry.sourceView(for: overrideSourceID, inHierarchyOf: sourceRoot)
-            {
-                return view
+            let effectiveSourceID =
+                (providerContext.zoomedViewController as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicSourceID
+                ?? zoom.sourceID
+
+            guard let sourceView = self._zoomViewRegistry.sourceView(for: effectiveSourceID, inHierarchyOf: sourceRoot) else {
+                return nil
             }
 
-            return self._zoomViewRegistry.sourceView(for: zoom.sourceID, inHierarchyOf: sourceRoot)
+            // If the registered source view is our capture view, install a snapshot of the *real* SwiftUI content
+            // into it, so UIKit has visible pixels to animate.
+            //
+            // Why do we need this?
+            // `.suinavZoomSource(id:)` is implemented as an invisible UIKit view inserted into SwiftUI.
+            // UIKit’s zoom transition snapshots the `UIView` returned from this provider. If that view is empty,
+            // the transition can look like a regular push/pop (the source stays put and no hero zoom is visible).
+            if let captureView = sourceView as? _SUINavigationZoomCaptureView {
+                // Ensure the previous snapshot doesn't get included in the new snapshot (important when reusing views).
+                captureView.setSnapshotImage(nil)
+                captureView.setSnapshotImage(_makeZoomSnapshotImage(for: captureView, in: sourceRoot))
+            }
+
+            // Hide the real SwiftUI content for this source id while the transition is active.
+            //
+            // We clear this state in `UINavigationControllerDelegate.didShow` and (for interactive dismiss)
+            // in `notifyWhenInteractionChanges` to avoid leaving the source permanently hidden.
+            self._activeZoomSourceID = effectiveSourceID
+            return sourceView
         }
         #endif
     }
+
+    #if canImport(UIKit)
+    /// Captures a snapshot image for a zoom source view.
+    ///
+    /// The snapshot is rendered from the entire source view controller's view hierarchy and clipped to the
+    /// source view's frame. This is a best-effort approach that avoids relying on SwiftUI's private UIKit view
+    /// structure, while still producing a visually correct “hero” snapshot in most cases.
+    private func _makeZoomSnapshotImage(for sourceView: UIView, in sourceRootView: UIView) -> UIImage? {
+        let rectInRoot = sourceView.convert(sourceView.bounds, to: sourceRootView)
+        guard rectInRoot.width > 0, rectInRoot.height > 0 else { return nil }
+
+        let renderer = UIGraphicsImageRenderer(size: rectInRoot.size)
+        return renderer.image { context in
+            context.cgContext.translateBy(x: -rectInRoot.minX, y: -rectInRoot.minY)
+            sourceRootView.drawHierarchy(in: sourceRootView.bounds, afterScreenUpdates: false)
+        }
+    }
+    #endif
 
 }

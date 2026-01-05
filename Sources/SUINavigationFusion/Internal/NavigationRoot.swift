@@ -158,6 +158,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 self.completionCurve          = context.completionCurve
                 self.completionVelocity       = context.completionVelocity
 
+                // If a zoom interactive dismiss finished or was cancelled, restore the source view immediately.
+                //
+                // For iOS 18+ fluid zoom transitions, `didShow` can fire noticeably later than the moment the UI
+                // looks “done”. Clearing the zoom state here keeps the source list/grid responsive right after the
+                // gesture ends (and avoids leaving the tapped cell hidden).
+                self.injectedNavigator?._activeZoomSourceID = nil
+
                 // Path-driven stacks are “NavigationStack-like”: an external router owns `SUINavigationPath`,
                 // and UIKit must follow it. For gesture-driven navigation (interactive pop/zoom dismiss),
                 // UIKit becomes the source of truth.
@@ -291,7 +298,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         inHierarchyOf: sourceHierarchyRoot
                     )
 
-                    var viewsToHide = sourceViews
+                    // When using snapshot-based zoom sources (`.suinavZoomSource(id:)`), the registered
+                    // source view is a dedicated capture view that UIKit animates from. Do not hide it,
+                    // otherwise the hero snapshot can disappear during the transition.
+                    //
+                    // Instead, `.suinavZoomSource` hides the *real* SwiftUI content via opacity while the
+                    // transition is active.
+                    var viewsToHide = sourceViews.filter { !($0 is _SUINavigationZoomCaptureView) }
                     if let destinationID = effectiveDestinationID {
                         viewsToHide += navigator._zoomViewRegistry.destinationViews(
                             for: destinationID,
@@ -330,6 +343,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             let startBoundPath = transitionStartBoundPath
             transitionStartBoundPath = nil
             transitionWasInteractive = false
+
+            // Clear any active zoom source state.
+            //
+            // This is the main cleanup point for non-interactive transitions (button-driven push/pop).
+            // For interactive zoom dismiss, we also clear this earlier in `notifyWhenInteractionChanges`
+            // to avoid keeping the source view hidden while UIKit finalizes the transition.
+            injectedNavigator?._activeZoomSourceID = nil
             guard !isRestoring, let navigationController = navigationController as? NCUINavigationController else { return }
             guard let restorationContext else { return }
 
