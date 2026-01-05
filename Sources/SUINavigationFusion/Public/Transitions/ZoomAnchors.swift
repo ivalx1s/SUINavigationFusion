@@ -79,11 +79,14 @@ private struct _SUINavigationZoomSourceModifier<ID: Hashable>: ViewModifier {
         return content
             // Hide the real content during the transition so it doesn't stay behind the moving snapshot.
             .opacity(isZooming ? 0 : 1)
-            // Keep the capture view in the hierarchy so UIKit can snapshot it.
-            // The view is transparent when no snapshot is installed.
             .overlay(
                 _SUINavigationZoomAnchorRegistrar(id: AnyHashable(id), kind: .source)
                     .allowsHitTesting(false)
+                    // Keep the capture view invisible when not zooming.
+                    //
+                    // The capture view is only meant to be used as a temporary transition snapshot container.
+                    // If we leave it visible after the transition, the last snapshot can “freeze” the cell.
+                    .opacity(isZooming ? 1 : 0)
             )
     }
 }
@@ -97,6 +100,7 @@ private enum _SUINavigationZoomAnchorKind {
 ///
 /// UIKit zoom transitions require concrete `UIView` instances. SwiftUI does not expose them directly,
 /// so we insert an invisible `UIView` into the hierarchy and register its container view.
+@MainActor
 private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
     let id: AnyHashable
     let kind: _SUINavigationZoomAnchorKind
@@ -104,7 +108,7 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
     @EnvironmentObject private var navigator: Navigator
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(id: id, kind: kind)
+        Coordinator()
     }
 
     func makeUIView(context: Context) -> _SUINavigationZoomCaptureView {
@@ -115,44 +119,47 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: _SUINavigationZoomCaptureView, context: Context) {
-        Task { @MainActor in
-            context.coordinator.navigator = navigator
-        }
+        context.coordinator.update(id: id, kind: kind, navigator: navigator)
+
         uiView.onUpdate = { [weak coordinator = context.coordinator] view in
             Task { @MainActor in
                 coordinator?.registerIfPossible(anchorView: view)
             }
         }
 
-        // SwiftUI may attach the view to a superview after `updateUIView` completes.
-        // Register on the next run loop tick to reduce flakiness.
-        Task { @MainActor in
-            await Task.yield()
+        // Register immediately when possible. This reduces flakiness for transitions that start soon after
+        // the SwiftUI update (e.g. a tap on a freshly-rendered grid cell).
+        if uiView.window != nil {
             context.coordinator.registerIfPossible(anchorView: uiView)
         }
     }
 
     static func dismantleUIView(_ uiView: _SUINavigationZoomCaptureView, coordinator: Coordinator) {
-        Task { @MainActor in
-            coordinator.unregisterIfNeeded()
-        }
         uiView.onUpdate = nil
+        coordinator.unregisterIfNeeded()
     }
 
     @MainActor
     final class Coordinator {
-        let id: AnyHashable
-        let kind: _SUINavigationZoomAnchorKind
+        private var id: AnyHashable?
+        private var kind: _SUINavigationZoomAnchorKind?
         weak var navigator: Navigator?
         weak var lastRegisteredView: UIView?
 
-        init(id: AnyHashable, kind: _SUINavigationZoomAnchorKind) {
+        func update(id: AnyHashable, kind: _SUINavigationZoomAnchorKind, navigator: Navigator) {
+            // SwiftUI can reuse backing UIViews in lazy containers (List/LazyVGrid).
+            // If the id changes, we must unregister the previous mapping, otherwise future transitions can resolve
+            // to a stale view and snapshot the wrong on-screen element.
+            if self.id != id || self.kind != kind || self.navigator !== navigator {
+                unregisterIfNeeded()
+            }
             self.id = id
             self.kind = kind
+            self.navigator = navigator
         }
 
         func registerIfPossible(anchorView: UIView) {
-            guard let navigator else { return }
+            guard let navigator, let id, let kind else { return }
 
             // Register the capture view itself.
             //
@@ -173,7 +180,7 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
         }
 
         func unregisterIfNeeded() {
-            guard let navigator else { return }
+            guard let navigator, let id, let kind else { return }
             let target = lastRegisteredView
             switch kind {
             case .source:

@@ -684,6 +684,10 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
                 // Ensure the previous snapshot doesn't get included in the new snapshot (important when reusing views).
                 captureView.setSnapshotImage(nil)
                 captureView.setSnapshotImage(_makeZoomSnapshotImage(for: captureView, in: sourceRoot))
+                // The capture view is typically rendered with `.opacity(0)` outside of a transition to avoid
+                // “freezing” the source cell after a zoom dismiss. Make sure it's visible when UIKit snapshots it.
+                captureView.alpha = 1
+                captureView.isHidden = false
             }
 
             // Hide the real SwiftUI content for this source id while the transition is active.
