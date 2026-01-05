@@ -19,6 +19,18 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
     ///
     /// Used by `_NavigationRoot.Coordinator` to hide/show anchor views during the transition.
     var _suinavZoomTransitionInfo: _NavigationZoomTransitionInfo?
+
+    /// Dynamic zoom source id override for iOS 18+ zoom transitions.
+    ///
+    /// This allows SwiftUI detail screens that can change their “current item” (without leaving the screen)
+    /// to update the id that UIKit should zoom back to on dismiss.
+    var _suinavZoomDynamicSourceID: AnyHashable?
+
+    /// Dynamic zoom destination id override for iOS 18+ zoom transitions.
+    ///
+    /// When the destination hero view changes (e.g. paging between items), this keeps alignment-rect lookups
+    /// consistent with the currently displayed content.
+    var _suinavZoomDynamicDestinationID: AnyHashable?
     
     init(
         rootView: Content,
@@ -30,6 +42,8 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
         self.disablesBackGesture = disablesBackGesture
         self._restorationInfo = restorationInfo
         self._suinavZoomTransitionInfo = nil
+        self._suinavZoomDynamicSourceID = nil
+        self._suinavZoomDynamicDestinationID = nil
         super.init(rootView: rootView)
     }
     
@@ -53,3 +67,4 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
 
 extension NavigationShellHostingController: _NavigationRestorable {}
 extension NavigationShellHostingController: _NavigationZoomTransitionInfoProviding {}
+extension NavigationShellHostingController: _NavigationZoomDynamicIDsProviding {}

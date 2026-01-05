@@ -557,8 +557,16 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
                 guard let controllerView = controller.view else { return interactionContext.willBegin }
 
                 let destinationAnchorFrame: CGRect?
-                if let destinationID = zoom.destinationID,
-                   let destinationView = self._zoomViewRegistry.destinationView(for: destinationID, inHierarchyOf: controllerView) {
+                let overrideDestinationID = (controller as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicDestinationID
+                if
+                    let overrideDestinationID,
+                    let destinationView = self._zoomViewRegistry.destinationView(for: overrideDestinationID, inHierarchyOf: controllerView)
+                {
+                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: controllerView)
+                } else if
+                    let destinationID = zoom.destinationID,
+                    let destinationView = self._zoomViewRegistry.destinationView(for: destinationID, inHierarchyOf: controllerView)
+                {
                     destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: controllerView)
                 } else {
                     destinationAnchorFrame = nil
@@ -584,8 +592,16 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
                 let safeAreaBounds = zoomedView.bounds.inset(by: safeInsets)
 
                 let destinationAnchorFrame: CGRect?
-                if let destinationID = zoom.destinationID,
-                   let destinationView = self._zoomViewRegistry.destinationView(for: destinationID, inHierarchyOf: zoomedView) {
+                let overrideDestinationID = (context.zoomedViewController as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicDestinationID
+                if
+                    let overrideDestinationID,
+                    let destinationView = self._zoomViewRegistry.destinationView(for: overrideDestinationID, inHierarchyOf: zoomedView)
+                {
+                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: zoomedView)
+                } else if
+                    let destinationID = zoom.destinationID,
+                    let destinationView = self._zoomViewRegistry.destinationView(for: destinationID, inHierarchyOf: zoomedView)
+                {
                     destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: zoomedView)
                 } else {
                     destinationAnchorFrame = nil
@@ -620,6 +636,22 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             // UIKit calls this closure when it needs the “source” view (both on push and on pop).
             // Use the provided source view controller to select the correct anchor view.
             guard let sourceRoot = providerContext.sourceViewController.view else { return nil }
+
+            // Apple’s zoom transition API recommends using the provider context to decide which view to zoom from
+            // when dismissing. For example, a detail screen can page between items without leaving the screen,
+            // so the correct thumbnail to zoom back to can change over time.
+            //
+            // We support this by letting the zoomed SwiftUI screen publish its current id into the hosting
+            // controller (see `.suinavZoomDismissTo(id:)`). If no override is set, we fall back to the static
+            // `zoom.sourceID` captured when the controller was pushed.
+            let overrideSourceID = (providerContext.zoomedViewController as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicSourceID
+            if
+                let overrideSourceID,
+                let view = self._zoomViewRegistry.sourceView(for: overrideSourceID, inHierarchyOf: sourceRoot)
+            {
+                return view
+            }
+
             return self._zoomViewRegistry.sourceView(for: zoom.sourceID, inHierarchyOf: sourceRoot)
         }
         #endif

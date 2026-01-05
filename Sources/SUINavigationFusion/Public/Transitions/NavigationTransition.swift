@@ -104,6 +104,11 @@ public extension SUINavigationTransition {
 ///
 /// The underlying UIKit system requests the source view both for pushing and popping.
 /// Therefore the library stores **only ids** and resolves the actual views at transition time.
+///
+/// ### Dynamic dismiss target
+/// If your detail screen can change which item it represents without leaving the screen (for example, paging
+/// between photos), use `.suinavZoomDismissTo(id:)` on the zoomed screen to update which thumbnail UIKit
+/// should zoom back to when dismissing.
 public struct SUINavigationZoomTransition {
     /// Identifier of the view marked with `.suinavZoomSource(id:)` in the source screen.
     public var sourceID: AnyHashable

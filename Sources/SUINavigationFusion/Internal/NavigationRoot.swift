@@ -267,14 +267,28 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 let sourceHierarchyRoot = isPushTransition ? fromRoot : toRoot
                 let destinationHierarchyRoot = isPushTransition ? toRoot : fromRoot
 
+                // The id used for zooming back to the source can change while the detail screen is alive
+                // (e.g. paging between items without leaving the screen). Prefer the dynamic override published
+                // by the zoomed hosting controller, falling back to the static ids captured at push time.
+                let zoomedViewController = isPushTransition ? toViewController : fromViewController
+                let effectiveSourceID: AnyHashable
+                let effectiveDestinationID: AnyHashable?
+                if let dynamic = zoomedViewController as? _NavigationZoomDynamicIDsProviding {
+                    effectiveSourceID = dynamic._suinavZoomDynamicSourceID ?? zoomInfo.sourceID
+                    effectiveDestinationID = dynamic._suinavZoomDynamicDestinationID ?? zoomInfo.destinationID
+                } else {
+                    effectiveSourceID = zoomInfo.sourceID
+                    effectiveDestinationID = zoomInfo.destinationID
+                }
+
                 UIView.performWithoutAnimation {
                     let sourceViews = navigator._zoomViewRegistry.sourceViews(
-                        for: zoomInfo.sourceID,
+                        for: effectiveSourceID,
                         inHierarchyOf: sourceHierarchyRoot
                     )
 
                     var viewsToHide = sourceViews
-                    if let destinationID = zoomInfo.destinationID {
+                    if let destinationID = effectiveDestinationID {
                         viewsToHide += navigator._zoomViewRegistry.destinationViews(
                             for: destinationID,
                             inHierarchyOf: destinationHierarchyRoot
