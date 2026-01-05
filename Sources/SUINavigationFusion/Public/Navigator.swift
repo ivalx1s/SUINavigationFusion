@@ -517,20 +517,66 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
 
         // Keep the library’s “no interactive back” contract consistent:
         // - `disableBackGesture` disables edge-swipe back
-        // - the same flag also disables zoom’s interactive dismiss gestures unless explicitly allowed.
-        if disableBackGesture || zoom.interactiveDismiss == .disabled {
+        // - the same flag also disables zoom’s interactive dismiss gestures
+        //
+        // This ensures you can treat `disableBackGesture` as “no interactive dismissal” regardless of transition type.
+        if disableBackGesture {
             options.interactiveDismissShouldBegin = { _ in false }
-        }
+        } else if zoom.interactiveDismissPolicy._isPureSystemDefault == false {
+            // UIKit calls the interactive-dismiss hook with no reference to the view controller.
+            // Capture the destination controller weakly and resolve the destination anchor rect at interaction time.
+            options.interactiveDismissShouldBegin = { [weak self, weak controller] interactionContext in
+                guard let self else { return interactionContext.willBegin }
+                guard let controller else { return interactionContext.willBegin }
+                assert(Thread.isMainThread)
 
-        if let destinationID = zoom.destinationID {
-            options.alignmentRectProvider = { [weak self] context in
-                guard let self else { return context.zoomedViewController.view.bounds }
-                guard let destinationView = self._zoomViewRegistry.destinationView(for: destinationID) else {
-                    return context.zoomedViewController.view.bounds
+                guard let controllerView = controller.view else { return interactionContext.willBegin }
+
+                let destinationAnchorFrame: CGRect?
+                if let destinationID = zoom.destinationID,
+                   let destinationView = self._zoomViewRegistry.destinationView(for: destinationID),
+                   destinationView.isDescendant(of: controllerView) {
+                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: controllerView)
+                } else {
+                    destinationAnchorFrame = nil
                 }
 
-                // Convert the destination “hero” rect into the zoomed controller’s coordinate space.
-                return destinationView.convert(destinationView.bounds, to: context.zoomedViewController.view)
+                let context = SUINavigationZoomInteractiveDismissContext(
+                    systemWillBegin: interactionContext.willBegin,
+                    location: interactionContext.location,
+                    velocity: interactionContext.velocity,
+                    destinationAnchorFrame: destinationAnchorFrame
+                )
+                return zoom.interactiveDismissPolicy._evaluate(context)
+            }
+        }
+
+        if zoom.alignmentRectPolicy._isPureSystemDefault == false {
+            options.alignmentRectProvider = { [weak self] context in
+                guard let self else { return nil }
+                assert(Thread.isMainThread)
+
+                guard let zoomedView = context.zoomedViewController.view else { return nil }
+                let safeInsets = zoomedView.safeAreaInsets
+                let safeAreaBounds = zoomedView.bounds.inset(by: safeInsets)
+
+                let destinationAnchorFrame: CGRect?
+                if let destinationID = zoom.destinationID,
+                   let destinationView = self._zoomViewRegistry.destinationView(for: destinationID),
+                   destinationView.isDescendant(of: zoomedView) {
+                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: zoomedView)
+                } else {
+                    destinationAnchorFrame = nil
+                }
+
+                let policyContext = SUINavigationZoomAlignmentRectContext(
+                    zoomedViewBounds: zoomedView.bounds,
+                    zoomedSafeAreaBounds: safeAreaBounds,
+                    sourceViewSize: context.sourceView.bounds.size,
+                    destinationAnchorFrame: destinationAnchorFrame
+                )
+
+                return zoom.alignmentRectPolicy._evaluate(policyContext)
             }
         }
 

@@ -409,8 +409,52 @@ registry.register(PhotoRoute.self, defaultTransition: { route in
 - If multiple views register the same id at the same time, the last writer wins.
 - If the source view is not available when popping back (e.g. scrolled offscreen), UIKit may fall back to a default
   animation.
-- If you push a screen with `disableBackGesture: true`, SUINavigationFusion also disables zoom’s interactive dismiss
-  gestures by default to keep the “no interactive back” contract consistent.
+- If you push a screen with `disableBackGesture: true`, SUINavigationFusion **always** disables zoom’s interactive
+  dismiss gestures for that push, regardless of your transition policy. This keeps the library’s “no interactive back”
+  contract consistent across edge-swipe back and zoom dismiss.
+
+### Interactive dismiss policy
+
+UIKit’s zoom transitions can add interactive dismiss gestures (e.g. swipe-down/pinch) that are separate from
+edge-swipe back. Use `SUINavigationZoomInteractiveDismissPolicy` to control whether those gestures are allowed to begin.
+
+Common examples:
+
+```swift
+// Disable zoom interactive dismiss entirely.
+transition: .zoom(id: photo.id, interactiveDismissPolicy: .disabled)
+
+// Allow dismiss only when the gesture starts inside the hero element.
+transition: .zoom(id: photo.id, interactiveDismissPolicy: .onlyFromDestinationAnchor())
+
+// Compose multiple rules.
+transition: .zoom(
+  id: photo.id,
+  interactiveDismissPolicy: .onlyFromDestinationAnchor()
+    .and(.downwardSwipe(minimumVelocityY: 200))
+)
+```
+
+### Alignment rect policy
+
+The alignment rect controls *which area of the destination screen* the source view should zoom into.
+For complex detail screens, providing an alignment rect often improves visual quality (reduces “ghosting” and jumps).
+
+SUINavigationFusion exposes this via `SUINavigationZoomAlignmentRectPolicy`.
+
+```swift
+// Use the destination anchor (the view marked with `.suinavZoomDestination(id:)`).
+transition: .zoom(id: photo.id, alignmentRectPolicy: .destinationAnchor())
+
+// Inset the hero rect (in the destination view controller’s coordinate space).
+transition: .zoom(
+  id: photo.id,
+  alignmentRectPolicy: .destinationAnchor(inset: EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+)
+
+// Full control (example: safe-area bounds).
+transition: .zoom(id: photo.id, alignmentRectPolicy: .custom { $0.zoomedSafeAreaBounds })
+```
 
 ## Title & subtitle
 
