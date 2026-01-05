@@ -660,6 +660,21 @@ public struct AppNavigationShell<Root: View>: View {
 .topNavigationBarTrailing(position: .secondary) { Button { } label: { Image(systemName: "magnifyingglass") } }
 .topNavigationBarTrailingPrimary { Button { } label: { Image(systemName: "ellipsis.circle") } }
 
+## Top bar visibility
+
+You can show/hide specific parts of the bar per screen:
+
+```swift
+// Hide the entire bar (and remove the safe-area inset).
+.topNavigationBarVisibility(.hidden, for: .bar)
+
+// Hide only specific regions.
+.topNavigationBarVisibility(.hidden, for: .leading)
+.topNavigationBarVisibility(.hidden, for: .principal)
+.topNavigationBarVisibility(.hidden, for: .trailing)
+.topNavigationBarVisibility(.hidden, for: .trailingPosition(.secondary))
+```
+
 ## Back button
 - Hidden automatically on the root screen.
 - Per-screen control: `.topNavigationBarHidesBackButton(true)`
