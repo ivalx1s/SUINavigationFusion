@@ -681,9 +681,16 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             // UIKit’s zoom transition snapshots the `UIView` returned from this provider. If that view is empty,
             // the transition can look like a regular push/pop (the source stays put and no hero zoom is visible).
             if let captureView = sourceView as? _SUINavigationZoomCaptureView {
-                // Ensure the previous snapshot doesn't get included in the new snapshot (important when reusing views).
-                captureView.setSnapshotImage(nil)
-                captureView.setSnapshotImage(_makeZoomSnapshotImage(for: captureView, in: sourceRoot))
+                // UIKit may call the source-view provider multiple times during a single transition to capture
+                // up-to-date visuals.
+                //
+                // Our SwiftUI modifier hides the real content once `_activeZoomSourceID` is set, so re-capturing
+                // from the hierarchy after that point can produce an empty/black image. Capture once at the start
+                // of the transition and reuse the same snapshot for the remainder.
+                if self._activeZoomSourceID != effectiveSourceID || captureView.snapshotImage == nil {
+                    captureView.setSnapshotImage(nil)
+                    captureView.setSnapshotImage(_makeZoomSnapshotImage(for: captureView, in: sourceRoot))
+                }
                 // The capture view is typically rendered with `.opacity(0)` outside of a transition to avoid
                 // “freezing” the source cell after a zoom dismiss. Make sure it's visible when UIKit snapshots it.
                 captureView.alpha = 1
@@ -710,10 +717,18 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         let rectInRoot = sourceView.convert(sourceView.bounds, to: sourceRootView)
         guard rectInRoot.width > 0, rectInRoot.height > 0 else { return nil }
 
-        let renderer = UIGraphicsImageRenderer(size: rectInRoot.size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = sourceRootView.window?.screen.scale ?? UIScreen.main.scale
+        format.opaque = false
+
+        let renderer = UIGraphicsImageRenderer(size: rectInRoot.size, format: format)
         return renderer.image { context in
             context.cgContext.translateBy(x: -rectInRoot.minX, y: -rectInRoot.minY)
-            sourceRootView.drawHierarchy(in: sourceRootView.bounds, afterScreenUpdates: false)
+            sourceRootView.layoutIfNeeded()
+            let didDraw = sourceRootView.drawHierarchy(in: sourceRootView.bounds, afterScreenUpdates: true)
+            if !didDraw {
+                sourceRootView.layer.render(in: context.cgContext)
+            }
         }
     }
     #endif

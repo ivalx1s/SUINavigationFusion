@@ -130,6 +130,15 @@ private struct _SUINavigationZoomAnchorRegistrar: UIViewRepresentable {
             }
         }
 
+        // Clear any previous snapshot when this view is not actively used as the current zoom source.
+        //
+        // SwiftUI can reuse backing UIViews in lazy containers (List/LazyVGrid). If a capture view is recycled
+        // for a different id, we must not keep the old snapshot around, otherwise a future transition can
+        // animate stale pixels.
+        if kind == .source, navigator._activeZoomSourceID != id {
+            uiView.setSnapshotImage(nil)
+        }
+
         // Keep the capture view visually hidden outside of a transition.
         //
         // The capture view is a temporary snapshot container for UIKit’s zoom transition. If it remains visible
@@ -218,6 +227,8 @@ final class _SUINavigationZoomCaptureView: UIView {
         let view = UIImageView()
         view.contentMode = .scaleAspectFill
         view.clipsToBounds = true
+        view.isOpaque = false
+        view.backgroundColor = .clear
         return view
     }()
 
@@ -232,6 +243,8 @@ final class _SUINavigationZoomCaptureView: UIView {
     }
 
     private func setup() {
+        isOpaque = false
+        backgroundColor = .clear
         addSubview(snapshotImageView)
         snapshotImageView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -258,5 +271,7 @@ final class _SUINavigationZoomCaptureView: UIView {
     func setSnapshotImage(_ image: UIImage?) {
         snapshotImageView.image = image
     }
+
+    var snapshotImage: UIImage? { snapshotImageView.image }
 }
 #endif

@@ -301,13 +301,13 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         inHierarchyOf: sourceHierarchyRoot
                     )
 
-                    // When using snapshot-based zoom sources (`.suinavZoomSource(id:)`), the registered
-                    // source view is a dedicated capture view that UIKit snapshots and animates from.
+                    // UIKit may snapshot the source view multiple times during a zoom transition (see
+                    // `UIViewControllerTransition.zoom` docs). Hiding the source view can therefore lead to
+                    // blank/black snapshots being captured mid-transition.
                     //
-                    // UIKit animates its *own* snapshot layer — the original view must be hidden to create
-                    // the “hole” in the list/grid (otherwise you can see a duplicate/ghost underneath the
-                    // moving snapshot).
-                    var viewsToHide = sourceViews
+                    // We rely on the SwiftUI `.suinavZoomSource(id:)` modifier to hide the *real* content,
+                    // and avoid forcing `isHidden = true` on the UIKit source views here.
+                    var viewsToHide: [UIView] = []
                     if let destinationID = effectiveDestinationID {
                         viewsToHide += navigator._zoomViewRegistry.destinationViews(
                             for: destinationID,
