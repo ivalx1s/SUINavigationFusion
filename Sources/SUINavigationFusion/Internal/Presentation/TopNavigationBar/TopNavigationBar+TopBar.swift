@@ -179,7 +179,6 @@ extension TopNavigationBar.TopBar {
         let itemTintColor: Color
         
         private var opacity: Double {
-            // TODO: PMA-17561
             // max(0, 1 - min(transitionProgressFraction / max(0.001, titleProgressThreshold), 1))
             1
         }
@@ -317,7 +316,6 @@ extension TopNavigationBar.TopBar {
         let itemTintColor: Color
         
         private var opacity: Double {
-            // TODO: PMA-17561
             // max(0, 1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1))
             1
         }
@@ -338,7 +336,6 @@ extension TopNavigationBar.TopBar {
         let itemTintColor: Color
         
         private var opacity: Double {
-            // TODO: PMA-17561
             // max(0, 1 - min(Double(progress) / max(0.001, titleProgressThreshold), 1))
             1
         }
@@ -357,7 +354,6 @@ extension TopNavigationBar.TopBar {
         let itemTintColor: Color
         
         private var opacity: Double {
-            // TODO: PMA-17561
             // max(0, 1 - min(Double(pageTransitionProgress) / max(0.001, titleProgressThreshold), 1))
             1
         }
@@ -387,7 +383,6 @@ extension TopNavigationBar.TopBar {
         let subtitleFontColor: Color?
         
         private var opacity: Double {
-            // TODO: PMA-17561
 //            max(0, 1 - min(Double(progress) / max(0.001, titleProgressThreshold), 1))
             1
         }
