@@ -78,6 +78,9 @@ protocol _NavigationZoomTransitionStateProviding: AnyObject {
     /// These are applied once UIKit reports that the transition finished/canceled.
     var _suinavZoomPendingDynamicSourceID: AnyHashable? { get set }
     var _suinavZoomPendingDynamicDestinationID: AnyHashable? { get set }
+
+    /// Diagnostic counter: how many times UIKit requested the zoom source view during the current transition.
+    var _suinavZoomSourceProviderCallCount: Int { get set }
 }
 
 @MainActor

@@ -125,6 +125,8 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         private var transitionStartBoundPath: SUINavigationPath?
         private var transitionWasInteractive: Bool = false
         private weak var transitionZoomedViewController: UIViewController?
+        private var transitionSerial: Int = 0
+        private var activeTransitionSerial: Int?
 
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
@@ -141,9 +143,21 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                                          willShow viewController: UIViewController,
                                          animated: Bool) {
             guard let transitionContext = navigationController.transitionCoordinator else { return }
+            transitionSerial += 1
+            let serial = transitionSerial
+            activeTransitionSerial = serial
             transitionCoordinator = transitionContext
             transitionStartBoundPath = pathDriver?.get()
             transitionWasInteractive = transitionContext.isInteractive
+
+            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                let fromVC = transitionContext.viewController(forKey: .from)
+                let toVC = transitionContext.viewController(forKey: .to)
+                let depth = navigationController.viewControllers.count
+                _SUINavigationFusionDiagnostics.zoom(
+                    "willShow t#\(serial) interactive=\(transitionContext.isInteractive) percent=\(String(format: "%.3f", transitionContext.percentComplete)) depth=\(depth) from=\(fromVC.map { String(describing: type(of: $0)) } ?? "nil") to=\(toVC.map { String(describing: type(of: $0)) } ?? "nil")"
+                )
+            }
             
             transitionStartTime      = CACurrentMediaTime()
             transitionDuration       = transitionContext.transitionDuration
@@ -172,6 +186,12 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         _suinavClearFrozenZoomIDs(on: zoomed)
                         _suinavClearLastResolvedZoomSourceView(on: zoomed)
                     }
+                }
+
+                if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                    _SUINavigationFusionDiagnostics.zoom(
+                        "interactionChange t#\(serial) cancelled=\(context.isCancelled) percent=\(String(format: "%.3f", context.percentComplete))"
+                    )
                 }
 
                 // Path-driven stacks are “NavigationStack-like”: an external router owns `SUINavigationPath`,
@@ -242,6 +262,15 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         state._suinavZoomTransitionIsInFlight = true
                         state._suinavZoomPendingDynamicSourceID = nil
                         state._suinavZoomPendingDynamicDestinationID = nil
+                        state._suinavZoomSourceProviderCallCount = 0
+                    }
+
+                    if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                        let dynamicSource = (zoomed as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicSourceID
+                        let dynamicDest = (zoomed as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicDestinationID
+                        _SUINavigationFusionDiagnostics.zoom(
+                            "zoomTransitionStart t#\(serial) push=\(isPushTransition) staticSource=\(String(describing: zoomInfo.sourceID)) staticDest=\(String(describing: zoomInfo.destinationID)) dynamicSource=\(String(describing: dynamicSource)) dynamicDest=\(String(describing: dynamicDest))"
+                        )
                     }
                     installZoomAnchorVisibilityHooks(
                         zoomInfo: zoomInfo,
@@ -348,6 +377,14 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             didShow viewController: UIViewController,
             animated: Bool
         ) {
+            let serial = activeTransitionSerial
+            activeTransitionSerial = nil
+            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                let depth = navigationController.viewControllers.count
+                _SUINavigationFusionDiagnostics.zoom(
+                    "didShow t#\(serial.map(String.init) ?? "nil") depth=\(depth) shown=\(String(describing: type(of: viewController)))"
+                )
+            }
             // `didShow` is our "transition finished" hook.
             //
             // Keep any temporary transition bookkeeping one-shot and clear it here (or via a transition
@@ -371,6 +408,14 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                     state._suinavZoomTransitionIsInFlight = false
                 }
                 _suinavApplyPendingZoomDynamicIDsIfNeeded(on: zoomed)
+                if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                    let callCount = (zoomed as? _NavigationZoomTransitionStateProviding)?._suinavZoomSourceProviderCallCount
+                    let dynamicSource = (zoomed as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicSourceID
+                    let dynamicDest = (zoomed as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicDestinationID
+                    _SUINavigationFusionDiagnostics.zoom(
+                        "zoomTransitionEnd t#\(serial.map(String.init) ?? "nil") providerCalls=\(callCount.map(String.init) ?? "nil") dynamicSource=\(String(describing: dynamicSource)) dynamicDest=\(String(describing: dynamicDest))"
+                    )
+                }
             }
             transitionZoomedViewController = nil
             guard !isRestoring, let navigationController = navigationController as? NCUINavigationController else { return }
@@ -423,6 +468,9 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         @MainActor
         func scheduleBoundPathUpdate(_ path: SUINavigationPath) {
             guard pathDriver != nil else { return }
+            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                _SUINavigationFusionDiagnostics.zoom("scheduleBoundPathUpdate depth=\(path.elements.count)")
+            }
             pendingPathUpdate = path
 
             pendingPathUpdateTask?.cancel()
@@ -737,6 +785,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             let (currentPath, isFullyRepresentable) = restorationContext.currentPath(from: navigationController)
 
             if desiredPath != currentPath || !isFullyRepresentable {
+                if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                    _SUINavigationFusionDiagnostics.zoom(
+                        "reconcile begin desired=\(desiredPath.elements.count) current=\(currentPath.elements.count) representable=\(isFullyRepresentable) transitioning=\(navigationController.transitionCoordinator != nil) animate=\(shouldAnimate)"
+                    )
+                }
                 // UIKit is not re-entrant: mutating the navigation stack while a transition is in flight can
                 // corrupt the stack and break animations. This is especially noticeable for iOS 18+ zoom
                 // interactive dismiss, where the completion phase can be relatively long.
@@ -754,6 +807,19 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         requestedTransition = context.transaction.suinavigationTransition
                     } else {
                         requestedTransition = nil
+                    }
+                    if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                        let transitionKind: String
+                        if let requestedTransition, case .zoom = requestedTransition {
+                            transitionKind = "zoom"
+                        } else if requestedTransition != nil {
+                            transitionKind = "standard"
+                        } else {
+                            transitionKind = "nil"
+                        }
+                        _SUINavigationFusionDiagnostics.zoom(
+                            "reconcile deferred desired=\(desiredPath.elements.count) requestedTransition=\(transitionKind)"
+                        )
                     }
                     context.coordinator.pendingReconcile = .init(
                         desiredPath: desiredPath,
@@ -778,7 +844,31 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         } else {
                             requestedTransition = nil
                         }
+                        if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                            let transitionKind: String
+                            if let requestedTransition, case .zoom = requestedTransition {
+                                transitionKind = "zoom"
+                            } else if requestedTransition != nil {
+                                transitionKind = "standard"
+                            } else {
+                                transitionKind = "nil"
+                            }
+                            _SUINavigationFusionDiagnostics.zoom(
+                                "reconcile apply push elementKey=\(element.key.rawValue) requestedTransition=\(transitionKind)"
+                            )
+                        }
                         if let (controller, defaultTransition) = restorationContext.buildViewController(for: element, navigator: navigator) {
+                            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                                let defaultKind: String
+                                if let defaultTransition, case .zoom = defaultTransition {
+                                    defaultKind = "zoom"
+                                } else if defaultTransition != nil {
+                                    defaultKind = "standard"
+                                } else {
+                                    defaultKind = "nil"
+                                }
+                                _SUINavigationFusionDiagnostics.zoom("reconcile push build ok defaultTransition=\(defaultKind)")
+                            }
                             if shouldAnimate {
                                 let sourceViewController = navigationController.topViewController
                                 navigator._applyTransitionIfNeeded(
@@ -803,11 +893,17 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                               currentElements.count == desiredElements.count + 1,
                               Array(currentElements.prefix(desiredElements.count)) == desiredElements {
                         // Pop one element.
+                        if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                            _SUINavigationFusionDiagnostics.zoom("reconcile apply pop 1")
+                        }
                         navigationController.popViewController(animated: shouldAnimate)
                     } else if isFullyRepresentable,
                               desiredElements.count < currentElements.count,
                               Array(currentElements.prefix(desiredElements.count)) == desiredElements {
                         // Pop to a prefix (including root).
+                        if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                            _SUINavigationFusionDiagnostics.zoom("reconcile apply popToPrefix targetDepth=\(desiredElements.count)")
+                        }
                         if desiredElements.isEmpty {
                             navigationController.popToRootViewController(animated: shouldAnimate)
                         } else {
@@ -821,6 +917,9 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                         }
                     } else {
                         // Big diff (or unrepresentable suffix) → rebuild stack from desired path.
+                        if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                            _SUINavigationFusionDiagnostics.zoom("reconcile apply rebuild desiredDepth=\(desiredElements.count)")
+                        }
                         let (controllers, _) = restorationContext.buildViewControllers(for: desiredPath, navigator: navigator)
                         navigationController.setViewControllers([hosting] + controllers, animated: false)
                     }
@@ -831,6 +930,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                     // (policy may drop invalid suffix).
                     let (actualPath, _) = restorationContext.syncSnapshot(from: navigationController)
                     if actualPath != desiredRaw {
+                        if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                            _SUINavigationFusionDiagnostics.zoom(
+                                "reconcile normalize boundPath from=\(desiredRaw.elements.count) to=\(actualPath.elements.count)"
+                            )
+                        }
                         context.coordinator.scheduleBoundPathUpdate(actualPath)
                     }
                 }

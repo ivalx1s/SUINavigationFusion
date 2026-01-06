@@ -130,6 +130,11 @@ private struct _SUINavigationZoomDismissIDsRegistrar: UIViewRepresentable {
                 if let destinationID {
                     state._suinavZoomPendingDynamicDestinationID = destinationID
                 }
+                if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                    _SUINavigationFusionDiagnostics.zoom(
+                        "ZoomDismissTo deferred dynamic ids source=\(String(describing: sourceID)) dest=\(String(describing: destinationID))"
+                    )
+                }
                 return
             }
 
@@ -138,6 +143,11 @@ private struct _SUINavigationZoomDismissIDsRegistrar: UIViewRepresentable {
             }
             if let destinationID {
                 host._suinavZoomDynamicDestinationID = destinationID
+            }
+            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                _SUINavigationFusionDiagnostics.zoom(
+                    "ZoomDismissTo applied dynamic ids source=\(String(describing: sourceID)) dest=\(String(describing: destinationID))"
+                )
             }
         }
 

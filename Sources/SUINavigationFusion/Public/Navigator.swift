@@ -217,6 +217,17 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         _ mutation: @escaping (inout SUINavigationPath) -> Void
     ) {
         guard let driver = _pathDriver else { return }
+        if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+            let kindLabel: String
+            switch kind {
+            case .push: kindLabel = "push"
+            case .pop: kindLabel = "pop"
+            case .other: kindLabel = "other"
+            }
+            _SUINavigationFusionDiagnostics.zoom(
+                "Navigator.mutatePath kind=\(kindLabel) animated=\(animated) deferred=\(currentNavigationController()?.transitionCoordinator != nil) depth=\(driver.get().elements.count)"
+            )
+        }
 
         // If UIKit is currently transitioning (interactive pop, zoom dismiss, animated push, etc.),
         // do not mutate the bound path immediately: SwiftUI would try to reconcile UIKit while the transition
@@ -242,6 +253,17 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
                 basePath: driver.get(),
                 mutation: mutation
             )
+            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                let kindLabel: String
+                switch kind {
+                case .push: kindLabel = "push"
+                case .pop: kindLabel = "pop"
+                case .other: kindLabel = "other"
+                }
+                _SUINavigationFusionDiagnostics.zoom(
+                    "Navigator.mutatePath deferred kind=\(kindLabel) baseDepth=\(pendingPathMutation?.basePath.elements.count ?? -1)"
+                )
+            }
             schedulePendingPathMutationFlush(using: coordinator)
             return
         }
@@ -322,6 +344,11 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         // then immediately navigates back again. If we replay the push later on a different base path,
         // the app “auto-pushes” unexpectedly.
         if pending.kind == .push, driver.get() != pending.basePath {
+            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                _SUINavigationFusionDiagnostics.zoom(
+                    "Navigator.flushPending dropStalePush baseDepth=\(pending.basePath.elements.count) currentDepth=\(driver.get().elements.count)"
+                )
+            }
             pendingPathMutation = nil
             pendingMutationCoordinator = nil
             return
@@ -334,6 +361,17 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             return
         }
 
+        if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+            let kindLabel: String
+            switch pending.kind {
+            case .push: kindLabel = "push"
+            case .pop: kindLabel = "pop"
+            case .other: kindLabel = "other"
+            }
+            _SUINavigationFusionDiagnostics.zoom(
+                "Navigator.flushPending apply kind=\(kindLabel) currentDepth=\(driver.get().elements.count)"
+            )
+        }
         pendingPathMutation = nil
         pendingMutationCoordinator = nil
         applyPathMutation(
@@ -742,9 +780,27 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             guard let self else { return nil }
             assert(Thread.isMainThread)
 
+            let zoomedViewController = providerContext.zoomedViewController
+            var providerCallCount: Int?
+            if let state = zoomedViewController as? _NavigationZoomTransitionStateProviding {
+                state._suinavZoomSourceProviderCallCount += 1
+                providerCallCount = state._suinavZoomSourceProviderCallCount
+            }
+
+            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                _SUINavigationFusionDiagnostics.zoom(
+                    "sourceViewProvider call=\(providerCallCount.map(String.init) ?? "nil") zoomed=\(String(describing: type(of: zoomedViewController))) sourceVC=\(String(describing: type(of: providerContext.sourceViewController)))"
+                )
+            }
+
             // UIKit calls this closure when it needs the “source” view (both on push and on pop).
             // Use the provided source view controller to select the correct anchor view.
-            guard let sourceRoot = providerContext.sourceViewController.view else { return nil }
+            guard let sourceRoot = providerContext.sourceViewController.view else {
+                if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                    _SUINavigationFusionDiagnostics.zoom("sourceViewProvider call=\(providerCallCount.map(String.init) ?? "nil") failed: sourceViewController.view == nil")
+                }
+                return nil
+            }
 
             // Apple’s zoom transition API recommends using the provider context to decide which view to zoom from
             // when dismissing. For example, a detail screen can page between items without leaving the screen,
@@ -753,29 +809,47 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
 	            // We support this by letting the zoomed SwiftUI screen publish its current id into the hosting
 	            // controller (see `.suinavZoomDismissTo(id:)`). If no override is set, we fall back to the static
 	            // `zoom.sourceID` captured when the controller was pushed.
-	            let (effectiveSourceID, _) = _suinavResolveFrozenZoomIDs(
-	                zoomedViewController: providerContext.zoomedViewController,
-	                staticSourceID: zoom.sourceID,
-	                staticDestinationID: zoom.destinationID
-	            )
+            let (effectiveSourceID, _) = _suinavResolveFrozenZoomIDs(
+                zoomedViewController: zoomedViewController,
+                staticSourceID: zoom.sourceID,
+                staticDestinationID: zoom.destinationID
+            )
 
-	            let sourceView: UIView
-	            if let resolved = self._zoomViewRegistry.sourceView(for: effectiveSourceID, inHierarchyOf: sourceRoot) {
-	                sourceView = resolved
-	                if let cache = providerContext.zoomedViewController as? _NavigationZoomLastSourceViewProviding {
-	                    cache._suinavZoomLastSourceView = resolved
-	                    cache._suinavZoomLastSourceViewControllerID = ObjectIdentifier(providerContext.sourceViewController)
-	                }
-	            } else if
-	                let cache = providerContext.zoomedViewController as? _NavigationZoomLastSourceViewProviding,
-	                let last = cache._suinavZoomLastSourceView,
-	                cache._suinavZoomLastSourceViewControllerID == ObjectIdentifier(providerContext.sourceViewController),
-	                last.isDescendant(of: sourceRoot)
-	            {
-	                sourceView = last
-	            } else {
-	                return nil
-	            }
+            let sourceView: UIView
+            if let resolved = self._zoomViewRegistry.sourceView(for: effectiveSourceID, inHierarchyOf: sourceRoot) {
+                sourceView = resolved
+                if let cache = zoomedViewController as? _NavigationZoomLastSourceViewProviding {
+                    cache._suinavZoomLastSourceView = resolved
+                    cache._suinavZoomLastSourceViewControllerID = ObjectIdentifier(providerContext.sourceViewController)
+                }
+            } else if
+                let cache = zoomedViewController as? _NavigationZoomLastSourceViewProviding,
+                let last = cache._suinavZoomLastSourceView,
+                cache._suinavZoomLastSourceViewControllerID == ObjectIdentifier(providerContext.sourceViewController),
+                last.isDescendant(of: sourceRoot)
+            {
+                sourceView = last
+                if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                    _SUINavigationFusionDiagnostics.zoom(
+                        "sourceViewProvider call=\(providerCallCount.map(String.init) ?? "nil") usedFallback lastResolvedView for sourceID=\(String(describing: effectiveSourceID))"
+                    )
+                }
+            } else {
+                if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                    let dynamicSource = (zoomedViewController as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicSourceID
+                    let frozenSource = (zoomedViewController as? _NavigationZoomFrozenIDsProviding)?._suinavZoomFrozenSourceID
+                    _SUINavigationFusionDiagnostics.zoom(
+                        "sourceViewProvider call=\(providerCallCount.map(String.init) ?? "nil") failed: no source view for effectiveSourceID=\(String(describing: effectiveSourceID)) dynamicSource=\(String(describing: dynamicSource)) frozenSource=\(String(describing: frozenSource))"
+                    )
+                }
+                return nil
+            }
+
+            if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                _SUINavigationFusionDiagnostics.zoom(
+                    "sourceViewProvider call=\(providerCallCount.map(String.init) ?? "nil") resolved effectiveSourceID=\(String(describing: effectiveSourceID)) view=\(String(describing: type(of: sourceView)))"
+                )
+            }
 
 	            // If the registered source view is our capture view, install a snapshot of the *real* SwiftUI content
 	            // into it, so UIKit has visible pixels to animate.

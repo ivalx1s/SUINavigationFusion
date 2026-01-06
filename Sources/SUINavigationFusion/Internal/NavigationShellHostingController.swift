@@ -52,6 +52,9 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
     var _suinavZoomPendingDynamicSourceID: AnyHashable?
     var _suinavZoomPendingDynamicDestinationID: AnyHashable?
 
+    /// Diagnostic counter: how many times UIKit requested the zoom source view during the current transition.
+    var _suinavZoomSourceProviderCallCount: Int
+
     /// Last resolved zoom source view for the current transition.
     ///
     /// Used as a fallback if UIKit asks for the source view multiple times and SwiftUI has temporarily
@@ -76,6 +79,7 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
         self._suinavZoomTransitionIsInFlight = false
         self._suinavZoomPendingDynamicSourceID = nil
         self._suinavZoomPendingDynamicDestinationID = nil
+        self._suinavZoomSourceProviderCallCount = 0
         self._suinavZoomLastSourceView = nil
         self._suinavZoomLastSourceViewControllerID = nil
         super.init(rootView: rootView)
