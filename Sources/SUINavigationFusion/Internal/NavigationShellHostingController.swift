@@ -51,6 +51,13 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
     /// Pending dynamic ids to apply once the transition finishes.
     var _suinavZoomPendingDynamicSourceID: AnyHashable?
     var _suinavZoomPendingDynamicDestinationID: AnyHashable?
+
+    /// Last resolved zoom source view for the current transition.
+    ///
+    /// Used as a fallback if UIKit asks for the source view multiple times and SwiftUI has temporarily
+    /// restructured the source hierarchy (making the registry lookup fail).
+    weak var _suinavZoomLastSourceView: UIView?
+    var _suinavZoomLastSourceViewControllerID: ObjectIdentifier?
     
     init(
         rootView: Content,
@@ -69,6 +76,8 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
         self._suinavZoomTransitionIsInFlight = false
         self._suinavZoomPendingDynamicSourceID = nil
         self._suinavZoomPendingDynamicDestinationID = nil
+        self._suinavZoomLastSourceView = nil
+        self._suinavZoomLastSourceViewControllerID = nil
         super.init(rootView: rootView)
     }
     
@@ -95,3 +104,4 @@ extension NavigationShellHostingController: _NavigationZoomTransitionInfoProvidi
 extension NavigationShellHostingController: _NavigationZoomDynamicIDsProviding {}
 extension NavigationShellHostingController: _NavigationZoomFrozenIDsProviding {}
 extension NavigationShellHostingController: _NavigationZoomTransitionStateProviding {}
+extension NavigationShellHostingController: _NavigationZoomLastSourceViewProviding {}

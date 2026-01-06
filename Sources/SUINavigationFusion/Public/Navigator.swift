@@ -759,12 +759,26 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
 	                staticDestinationID: zoom.destinationID
 	            )
 
-            guard let sourceView = self._zoomViewRegistry.sourceView(for: effectiveSourceID, inHierarchyOf: sourceRoot) else {
-                return nil
-            }
+	            let sourceView: UIView
+	            if let resolved = self._zoomViewRegistry.sourceView(for: effectiveSourceID, inHierarchyOf: sourceRoot) {
+	                sourceView = resolved
+	                if let cache = providerContext.zoomedViewController as? _NavigationZoomLastSourceViewProviding {
+	                    cache._suinavZoomLastSourceView = resolved
+	                    cache._suinavZoomLastSourceViewControllerID = ObjectIdentifier(providerContext.sourceViewController)
+	                }
+	            } else if
+	                let cache = providerContext.zoomedViewController as? _NavigationZoomLastSourceViewProviding,
+	                let last = cache._suinavZoomLastSourceView,
+	                cache._suinavZoomLastSourceViewControllerID == ObjectIdentifier(providerContext.sourceViewController),
+	                last.isDescendant(of: sourceRoot)
+	            {
+	                sourceView = last
+	            } else {
+	                return nil
+	            }
 
-            // If the registered source view is our capture view, install a snapshot of the *real* SwiftUI content
-            // into it, so UIKit has visible pixels to animate.
+	            // If the registered source view is our capture view, install a snapshot of the *real* SwiftUI content
+	            // into it, so UIKit has visible pixels to animate.
             //
             // Why do we need this?
             // `.suinavZoomSource(id:)` is implemented as an invisible UIKit view inserted into SwiftUI.

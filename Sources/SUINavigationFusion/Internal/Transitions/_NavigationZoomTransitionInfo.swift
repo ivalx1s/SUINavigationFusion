@@ -81,6 +81,19 @@ protocol _NavigationZoomTransitionStateProviding: AnyObject {
 }
 
 @MainActor
+protocol _NavigationZoomLastSourceViewProviding: AnyObject {
+    /// The last source view successfully resolved by the zoom provider during the current transition.
+    ///
+    /// Used as a fallback if the registry cannot resolve the view on a subsequent provider call.
+    var _suinavZoomLastSourceView: UIView? { get set }
+
+    /// Identity of the source view controller that `_suinavZoomLastSourceView` belongs to.
+    ///
+    /// Prevents reusing a cached view across different source view controllers.
+    var _suinavZoomLastSourceViewControllerID: ObjectIdentifier? { get set }
+}
+
+@MainActor
 func _suinavResolveFrozenZoomIDs(
     zoomedViewController: UIViewController,
     staticSourceID: AnyHashable,
@@ -133,5 +146,12 @@ func _suinavApplyPendingZoomDynamicIDsIfNeeded(on viewController: UIViewControll
         dynamic._suinavZoomDynamicDestinationID = pending
         state._suinavZoomPendingDynamicDestinationID = nil
     }
+}
+
+@MainActor
+func _suinavClearLastResolvedZoomSourceView(on viewController: UIViewController) {
+    guard let provider = viewController as? _NavigationZoomLastSourceViewProviding else { return }
+    provider._suinavZoomLastSourceView = nil
+    provider._suinavZoomLastSourceViewControllerID = nil
 }
 #endif

@@ -170,6 +170,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                     self.injectedNavigator?._clearPendingPathMutation()
                     if let zoomed = self.transitionZoomedViewController {
                         _suinavClearFrozenZoomIDs(on: zoomed)
+                        _suinavClearLastResolvedZoomSourceView(on: zoomed)
                     }
                 }
 
@@ -236,6 +237,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                     let zoomed = isPushTransition ? toVC : fromVC
                     transitionZoomedViewController = zoomed
                     _suinavClearFrozenZoomIDs(on: zoomed)
+                    _suinavClearLastResolvedZoomSourceView(on: zoomed)
                     if let state = zoomed as? _NavigationZoomTransitionStateProviding {
                         state._suinavZoomTransitionIsInFlight = true
                         state._suinavZoomPendingDynamicSourceID = nil
@@ -364,6 +366,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             injectedNavigator?._activeZoomSourceID = nil
             if let zoomed = transitionZoomedViewController {
                 _suinavClearFrozenZoomIDs(on: zoomed)
+                _suinavClearLastResolvedZoomSourceView(on: zoomed)
                 if let state = zoomed as? _NavigationZoomTransitionStateProviding {
                     state._suinavZoomTransitionIsInFlight = false
                 }
