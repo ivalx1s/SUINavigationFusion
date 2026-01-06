@@ -42,6 +42,15 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
     /// when the transition finishes/cancels.
     var _suinavZoomFrozenSourceID: AnyHashable?
     var _suinavZoomFrozenDestinationID: AnyHashable?
+
+    /// Whether a zoom transition is currently in flight for this controller.
+    ///
+    /// Used to defer dynamic-id writes from `.suinavZoomDismissTo(...)` during interactive dismiss.
+    var _suinavZoomTransitionIsInFlight: Bool
+
+    /// Pending dynamic ids to apply once the transition finishes.
+    var _suinavZoomPendingDynamicSourceID: AnyHashable?
+    var _suinavZoomPendingDynamicDestinationID: AnyHashable?
     
     init(
         rootView: Content,
@@ -57,6 +66,9 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
         self._suinavZoomDynamicDestinationID = nil
         self._suinavZoomFrozenSourceID = nil
         self._suinavZoomFrozenDestinationID = nil
+        self._suinavZoomTransitionIsInFlight = false
+        self._suinavZoomPendingDynamicSourceID = nil
+        self._suinavZoomPendingDynamicDestinationID = nil
         super.init(rootView: rootView)
     }
     
@@ -82,3 +94,4 @@ extension NavigationShellHostingController: _NavigationRestorable {}
 extension NavigationShellHostingController: _NavigationZoomTransitionInfoProviding {}
 extension NavigationShellHostingController: _NavigationZoomDynamicIDsProviding {}
 extension NavigationShellHostingController: _NavigationZoomFrozenIDsProviding {}
+extension NavigationShellHostingController: _NavigationZoomTransitionStateProviding {}

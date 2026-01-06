@@ -119,6 +119,20 @@ private struct _SUINavigationZoomDismissIDsRegistrar: UIViewRepresentable {
             guard let host = findHostingController(from: view) else { return }
             lastHost = host
 
+            // If a zoom transition is currently in flight, do not mutate the live dynamic ids.
+            // UIKit may query the source view provider multiple times during interactive dismiss + completion;
+            // if ids change mid-flight, UIKit can enter undefined behavior. Defer the latest requested ids and
+            // apply them once the transition finishes.
+            if let state = host as? _NavigationZoomTransitionStateProviding, state._suinavZoomTransitionIsInFlight {
+                if let sourceID {
+                    state._suinavZoomPendingDynamicSourceID = sourceID
+                }
+                if let destinationID {
+                    state._suinavZoomPendingDynamicDestinationID = destinationID
+                }
+                return
+            }
+
             if let sourceID {
                 host._suinavZoomDynamicSourceID = sourceID
             }
@@ -129,6 +143,11 @@ private struct _SUINavigationZoomDismissIDsRegistrar: UIViewRepresentable {
 
         func clearIfNeeded() {
             guard let host = lastHost else { return }
+            if let state = host as? _NavigationZoomTransitionStateProviding {
+                state._suinavZoomPendingDynamicSourceID = nil
+                state._suinavZoomPendingDynamicDestinationID = nil
+                state._suinavZoomTransitionIsInFlight = false
+            }
             host._suinavZoomDynamicSourceID = nil
             host._suinavZoomDynamicDestinationID = nil
             lastHost = nil

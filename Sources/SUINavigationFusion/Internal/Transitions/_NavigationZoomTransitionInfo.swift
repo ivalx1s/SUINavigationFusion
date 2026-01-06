@@ -65,6 +65,21 @@ protocol _NavigationZoomFrozenIDsProviding: AnyObject {
     var _suinavZoomFrozenDestinationID: AnyHashable? { get set }
 }
 
+/// Stores transition lifecycle state for a zoomed controller.
+///
+/// Used to defer `.suinavZoomDismissTo(...)` updates while UIKit is mid-transition.
+@MainActor
+protocol _NavigationZoomTransitionStateProviding: AnyObject {
+    /// `true` while a zoom transition is in flight (push, pop, interactive dismiss + completion/cancel).
+    var _suinavZoomTransitionIsInFlight: Bool { get set }
+
+    /// The latest dynamic id updates observed during the transition.
+    ///
+    /// These are applied once UIKit reports that the transition finished/canceled.
+    var _suinavZoomPendingDynamicSourceID: AnyHashable? { get set }
+    var _suinavZoomPendingDynamicDestinationID: AnyHashable? { get set }
+}
+
 @MainActor
 func _suinavResolveFrozenZoomIDs(
     zoomedViewController: UIViewController,
@@ -99,5 +114,24 @@ func _suinavClearFrozenZoomIDs(on viewController: UIViewController) {
     guard let frozen = viewController as? _NavigationZoomFrozenIDsProviding else { return }
     frozen._suinavZoomFrozenSourceID = nil
     frozen._suinavZoomFrozenDestinationID = nil
+}
+
+@MainActor
+func _suinavApplyPendingZoomDynamicIDsIfNeeded(on viewController: UIViewController) {
+    guard
+        let state = viewController as? _NavigationZoomTransitionStateProviding,
+        let dynamic = viewController as? _NavigationZoomDynamicIDsProviding
+    else {
+        return
+    }
+
+    if let pending = state._suinavZoomPendingDynamicSourceID {
+        dynamic._suinavZoomDynamicSourceID = pending
+        state._suinavZoomPendingDynamicSourceID = nil
+    }
+    if let pending = state._suinavZoomPendingDynamicDestinationID {
+        dynamic._suinavZoomDynamicDestinationID = pending
+        state._suinavZoomPendingDynamicDestinationID = nil
+    }
 }
 #endif
