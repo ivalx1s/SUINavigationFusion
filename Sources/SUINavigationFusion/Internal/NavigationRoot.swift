@@ -124,6 +124,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         private var pendingPathUpdateTask: Task<Void, Never>?
         private var transitionStartBoundPath: SUINavigationPath?
         private var transitionWasInteractive: Bool = false
+        private weak var transitionZoomedViewController: UIViewController?
 
         private weak var transitionCoordinator: UIViewControllerTransitionCoordinator?
         private var displayLink: CADisplayLink?
@@ -167,6 +168,9 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 if context.isCancelled {
                     self.injectedNavigator?._activeZoomSourceID = nil
                     self.injectedNavigator?._clearPendingPathMutation()
+                    if let zoomed = self.transitionZoomedViewController {
+                        _suinavClearFrozenZoomIDs(on: zoomed)
+                    }
                 }
 
                 // Path-driven stacks are “NavigationStack-like”: an external router owns `SUINavigationPath`,
@@ -229,6 +233,9 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 }
 
                 if let zoomInfo {
+                    let zoomed = isPushTransition ? toVC : fromVC
+                    transitionZoomedViewController = zoomed
+                    _suinavClearFrozenZoomIDs(on: zoomed)
                     installZoomAnchorVisibilityHooks(
                         zoomInfo: zoomInfo,
                         isPushTransition: isPushTransition,
@@ -286,15 +293,11 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 // (e.g. paging between items without leaving the screen). Prefer the dynamic override published
                 // by the zoomed hosting controller, falling back to the static ids captured at push time.
                 let zoomedViewController = isPushTransition ? toViewController : fromViewController
-                let effectiveSourceID: AnyHashable
-                let effectiveDestinationID: AnyHashable?
-                if let dynamic = zoomedViewController as? _NavigationZoomDynamicIDsProviding {
-                    effectiveSourceID = dynamic._suinavZoomDynamicSourceID ?? zoomInfo.sourceID
-                    effectiveDestinationID = dynamic._suinavZoomDynamicDestinationID ?? zoomInfo.destinationID
-                } else {
-                    effectiveSourceID = zoomInfo.sourceID
-                    effectiveDestinationID = zoomInfo.destinationID
-                }
+                let (effectiveSourceID, effectiveDestinationID) = _suinavResolveFrozenZoomIDs(
+                    zoomedViewController: zoomedViewController,
+                    staticSourceID: zoomInfo.sourceID,
+                    staticDestinationID: zoomInfo.destinationID
+                )
 
                 UIView.performWithoutAnimation {
                     let sourceViews = navigator._zoomViewRegistry.sourceViews(
@@ -354,6 +357,10 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             // For interactive zoom dismiss, we also clear this earlier in `notifyWhenInteractionChanges`
             // to avoid keeping the source view hidden while UIKit finalizes the transition.
             injectedNavigator?._activeZoomSourceID = nil
+            if let zoomed = transitionZoomedViewController {
+                _suinavClearFrozenZoomIDs(on: zoomed)
+            }
+            transitionZoomedViewController = nil
             guard !isRestoring, let navigationController = navigationController as? NCUINavigationController else { return }
             guard let restorationContext else { return }
 

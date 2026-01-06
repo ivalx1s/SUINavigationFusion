@@ -31,6 +31,17 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
     /// When the destination hero view changes (e.g. paging between items), this keeps alignment-rect lookups
     /// consistent with the currently displayed content.
     var _suinavZoomDynamicDestinationID: AnyHashable?
+
+    /// Transition-scoped frozen zoom ids (iOS 18+ zoom).
+    ///
+    /// UIKit may request the source view multiple times during a single transition (notably for interactive
+    /// dismiss + completion). If SwiftUI updates the dynamic ids mid-transition, the effective ids can change
+    /// between provider calls, which can lead to undefined behavior (including looping transitions).
+    ///
+    /// SUINavigationFusion freezes the effective ids for the duration of each transition and clears them
+    /// when the transition finishes/cancels.
+    var _suinavZoomFrozenSourceID: AnyHashable?
+    var _suinavZoomFrozenDestinationID: AnyHashable?
     
     init(
         rootView: Content,
@@ -44,6 +55,8 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
         self._suinavZoomTransitionInfo = nil
         self._suinavZoomDynamicSourceID = nil
         self._suinavZoomDynamicDestinationID = nil
+        self._suinavZoomFrozenSourceID = nil
+        self._suinavZoomFrozenDestinationID = nil
         super.init(rootView: rootView)
     }
     
@@ -68,3 +81,4 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
 extension NavigationShellHostingController: _NavigationRestorable {}
 extension NavigationShellHostingController: _NavigationZoomTransitionInfoProviding {}
 extension NavigationShellHostingController: _NavigationZoomDynamicIDsProviding {}
+extension NavigationShellHostingController: _NavigationZoomFrozenIDsProviding {}

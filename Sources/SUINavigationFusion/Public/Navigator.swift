@@ -660,28 +660,27 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         } else if zoom.interactiveDismissPolicy._isPureSystemDefault == false {
             // UIKit calls the interactive-dismiss hook with no reference to the view controller.
             // Capture the destination controller weakly and resolve the destination anchor rect at interaction time.
-            options.interactiveDismissShouldBegin = { [weak self, weak controller] interactionContext in
-                guard let self else { return interactionContext.willBegin }
-                guard let controller else { return interactionContext.willBegin }
-                assert(Thread.isMainThread)
+	            options.interactiveDismissShouldBegin = { [weak self, weak controller] interactionContext in
+	                guard let self else { return interactionContext.willBegin }
+	                guard let controller else { return interactionContext.willBegin }
+	                assert(Thread.isMainThread)
 
-                guard let controllerView = controller.view else { return interactionContext.willBegin }
+	                guard let controllerView = controller.view else { return interactionContext.willBegin }
 
-                let destinationAnchorFrame: CGRect?
-                let overrideDestinationID = (controller as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicDestinationID
-                if
-                    let overrideDestinationID,
-                    let destinationView = self._zoomViewRegistry.destinationView(for: overrideDestinationID, inHierarchyOf: controllerView)
-                {
-                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: controllerView)
-                } else if
-                    let destinationID = zoom.destinationID,
-                    let destinationView = self._zoomViewRegistry.destinationView(for: destinationID, inHierarchyOf: controllerView)
-                {
-                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: controllerView)
-                } else {
-                    destinationAnchorFrame = nil
-                }
+	                let destinationAnchorFrame: CGRect?
+	                let (_, effectiveDestinationID) = _suinavResolveFrozenZoomIDs(
+	                    zoomedViewController: controller,
+	                    staticSourceID: zoom.sourceID,
+	                    staticDestinationID: zoom.destinationID
+	                )
+	                if
+	                    let effectiveDestinationID,
+	                    let destinationView = self._zoomViewRegistry.destinationView(for: effectiveDestinationID, inHierarchyOf: controllerView)
+	                {
+	                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: controllerView)
+	                } else {
+	                    destinationAnchorFrame = nil
+	                }
 
                 let context = SUINavigationZoomInteractiveDismissContext(
                     systemWillBegin: interactionContext.willBegin,
@@ -702,21 +701,20 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
                 let safeInsets = zoomedView.safeAreaInsets
                 let safeAreaBounds = zoomedView.bounds.inset(by: safeInsets)
 
-                let destinationAnchorFrame: CGRect?
-                let overrideDestinationID = (context.zoomedViewController as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicDestinationID
-                if
-                    let overrideDestinationID,
-                    let destinationView = self._zoomViewRegistry.destinationView(for: overrideDestinationID, inHierarchyOf: zoomedView)
-                {
-                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: zoomedView)
-                } else if
-                    let destinationID = zoom.destinationID,
-                    let destinationView = self._zoomViewRegistry.destinationView(for: destinationID, inHierarchyOf: zoomedView)
-                {
-                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: zoomedView)
-                } else {
-                    destinationAnchorFrame = nil
-                }
+	                let destinationAnchorFrame: CGRect?
+	                let (_, effectiveDestinationID) = _suinavResolveFrozenZoomIDs(
+	                    zoomedViewController: context.zoomedViewController,
+	                    staticSourceID: zoom.sourceID,
+	                    staticDestinationID: zoom.destinationID
+	                )
+	                if
+	                    let effectiveDestinationID,
+	                    let destinationView = self._zoomViewRegistry.destinationView(for: effectiveDestinationID, inHierarchyOf: zoomedView)
+	                {
+	                    destinationAnchorFrame = destinationView.convert(destinationView.bounds, to: zoomedView)
+	                } else {
+	                    destinationAnchorFrame = nil
+	                }
 
                 let policyContext = SUINavigationZoomAlignmentRectContext(
                     zoomedViewBounds: zoomedView.bounds,
@@ -752,12 +750,14 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             // when dismissing. For example, a detail screen can page between items without leaving the screen,
             // so the correct thumbnail to zoom back to can change over time.
             //
-            // We support this by letting the zoomed SwiftUI screen publish its current id into the hosting
-            // controller (see `.suinavZoomDismissTo(id:)`). If no override is set, we fall back to the static
-            // `zoom.sourceID` captured when the controller was pushed.
-            let effectiveSourceID =
-                (providerContext.zoomedViewController as? _NavigationZoomDynamicIDsProviding)?._suinavZoomDynamicSourceID
-                ?? zoom.sourceID
+	            // We support this by letting the zoomed SwiftUI screen publish its current id into the hosting
+	            // controller (see `.suinavZoomDismissTo(id:)`). If no override is set, we fall back to the static
+	            // `zoom.sourceID` captured when the controller was pushed.
+	            let (effectiveSourceID, _) = _suinavResolveFrozenZoomIDs(
+	                zoomedViewController: providerContext.zoomedViewController,
+	                staticSourceID: zoom.sourceID,
+	                staticDestinationID: zoom.destinationID
+	            )
 
             guard let sourceView = self._zoomViewRegistry.sourceView(for: effectiveSourceID, inHierarchyOf: sourceRoot) else {
                 return nil

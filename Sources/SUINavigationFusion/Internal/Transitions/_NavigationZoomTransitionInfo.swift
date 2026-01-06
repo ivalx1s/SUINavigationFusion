@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Ephemeral metadata attached to pushed hosting controllers when using iOS 18+ native zoom transitions.
 ///
@@ -46,3 +49,55 @@ protocol _NavigationZoomDynamicIDsProviding: AnyObject {
     /// If `nil`, the library falls back to the id provided by `SUINavigationZoomTransition.destinationID`.
     var _suinavZoomDynamicDestinationID: AnyHashable? { get set }
 }
+
+#if canImport(UIKit)
+/// Stores transition-scoped “frozen” zoom ids.
+///
+/// UIKit may call the zoom source-view provider multiple times during a single transition (especially for
+/// interactive dismiss + completion). If the effective ids change between calls (because SwiftUI updates
+/// `.suinavZoomDismissTo(...)` while the transition is in flight), UIKit can enter undefined behavior
+/// (including repeated/looping transitions).
+///
+/// To make the system robust, SUINavigationFusion freezes the effective ids for the duration of a transition.
+@MainActor
+protocol _NavigationZoomFrozenIDsProviding: AnyObject {
+    var _suinavZoomFrozenSourceID: AnyHashable? { get set }
+    var _suinavZoomFrozenDestinationID: AnyHashable? { get set }
+}
+
+@MainActor
+func _suinavResolveFrozenZoomIDs(
+    zoomedViewController: UIViewController,
+    staticSourceID: AnyHashable,
+    staticDestinationID: AnyHashable?
+) -> (sourceID: AnyHashable, destinationID: AnyHashable?) {
+    if
+        let frozen = zoomedViewController as? _NavigationZoomFrozenIDsProviding,
+        let sourceID = frozen._suinavZoomFrozenSourceID
+    {
+        return (sourceID, frozen._suinavZoomFrozenDestinationID)
+    }
+
+    var sourceID = staticSourceID
+    var destinationID = staticDestinationID
+
+    if let dynamic = zoomedViewController as? _NavigationZoomDynamicIDsProviding {
+        sourceID = dynamic._suinavZoomDynamicSourceID ?? sourceID
+        destinationID = dynamic._suinavZoomDynamicDestinationID ?? destinationID
+    }
+
+    if let frozen = zoomedViewController as? _NavigationZoomFrozenIDsProviding {
+        frozen._suinavZoomFrozenSourceID = sourceID
+        frozen._suinavZoomFrozenDestinationID = destinationID
+    }
+
+    return (sourceID, destinationID)
+}
+
+@MainActor
+func _suinavClearFrozenZoomIDs(on viewController: UIViewController) {
+    guard let frozen = viewController as? _NavigationZoomFrozenIDsProviding else { return }
+    frozen._suinavZoomFrozenSourceID = nil
+    frozen._suinavZoomFrozenDestinationID = nil
+}
+#endif
