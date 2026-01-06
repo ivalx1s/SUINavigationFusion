@@ -781,6 +781,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             assert(Thread.isMainThread)
 
             let zoomedViewController = providerContext.zoomedViewController
+            let sourceViewControllerID = ObjectIdentifier(providerContext.sourceViewController)
             var providerCallCount: Int?
             if let state = zoomedViewController as? _NavigationZoomTransitionStateProviding {
                 state._suinavZoomSourceProviderCallCount += 1
@@ -816,23 +817,26 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             )
 
             let sourceView: UIView
-            if let resolved = self._zoomViewRegistry.sourceView(for: effectiveSourceID, inHierarchyOf: sourceRoot) {
-                sourceView = resolved
-                if let cache = zoomedViewController as? _NavigationZoomLastSourceViewProviding {
-                    cache._suinavZoomLastSourceView = resolved
-                    cache._suinavZoomLastSourceViewControllerID = ObjectIdentifier(providerContext.sourceViewController)
-                }
-            } else if
+            // Prefer a cached view for this same effective id (stabilizes repeated provider calls).
+            if
                 let cache = zoomedViewController as? _NavigationZoomLastSourceViewProviding,
+                cache._suinavZoomLastSourceViewControllerID == sourceViewControllerID,
+                cache._suinavZoomLastSourceID == effectiveSourceID,
                 let last = cache._suinavZoomLastSourceView,
-                cache._suinavZoomLastSourceViewControllerID == ObjectIdentifier(providerContext.sourceViewController),
                 last.isDescendant(of: sourceRoot)
             {
                 sourceView = last
                 if _SUINavigationFusionDiagnostics.isZoomEnabled() {
                     _SUINavigationFusionDiagnostics.zoom(
-                        "sourceViewProvider call=\(providerCallCount.map(String.init) ?? "nil") usedFallback lastResolvedView for sourceID=\(String(describing: effectiveSourceID))"
+                        "sourceViewProvider call=\(providerCallCount.map(String.init) ?? "nil") usedCachedSourceView for sourceID=\(String(describing: effectiveSourceID))"
                     )
+                }
+            } else if let resolved = self._zoomViewRegistry.sourceView(for: effectiveSourceID, inHierarchyOf: sourceRoot) {
+                sourceView = resolved
+                if let cache = zoomedViewController as? _NavigationZoomLastSourceViewProviding {
+                    cache._suinavZoomLastSourceView = resolved
+                    cache._suinavZoomLastSourceViewControllerID = sourceViewControllerID
+                    cache._suinavZoomLastSourceID = effectiveSourceID
                 }
             } else {
                 if _SUINavigationFusionDiagnostics.isZoomEnabled() {
@@ -879,7 +883,9 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             //
             // We clear this state in `UINavigationControllerDelegate.didShow` and (for interactive dismiss)
             // in `notifyWhenInteractionChanges` to avoid leaving the source permanently hidden.
-            self._activeZoomSourceID = effectiveSourceID
+            if self._activeZoomSourceID != effectiveSourceID {
+                self._activeZoomSourceID = effectiveSourceID
+            }
             return sourceView
         }
         #endif

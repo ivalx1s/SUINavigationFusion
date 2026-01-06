@@ -51,6 +51,29 @@ public extension SUINavigationTransition {
         )
     }
 
+    /// Convenience for a zoom transition where only the source anchor is identified.
+    ///
+    /// Use this when you have a source view marked with `.suinavZoomSource(id:)` but do not want to (or cannot)
+    /// provide a destination anchor view id.
+    static func zoom<SourceID: Hashable>(
+        sourceID: SourceID,
+        interactiveDismissPolicy: SUINavigationZoomInteractiveDismissPolicy = .systemDefault,
+        alignmentRectPolicy: SUINavigationZoomAlignmentRectPolicy = .systemDefault,
+        dimmingColor: Color? = nil,
+        dimmingVisualEffect: SUINavigationZoomDimmingVisualEffect? = nil
+    ) -> Self {
+        .zoom(
+            .init(
+                sourceID: AnyHashable(sourceID),
+                destinationID: nil,
+                interactiveDismissPolicy: interactiveDismissPolicy,
+                alignmentRectPolicy: alignmentRectPolicy,
+                dimmingColor: dimmingColor,
+                dimmingVisualEffect: dimmingVisualEffect
+            )
+        )
+    }
+
     /// Convenience for a zoom transition with separate source and destination identifiers.
     ///
     /// Use this when the source view and the destination “hero” view have different ids, or when you do not

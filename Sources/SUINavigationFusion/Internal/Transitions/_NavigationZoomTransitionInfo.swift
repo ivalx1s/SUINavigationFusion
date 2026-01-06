@@ -94,6 +94,11 @@ protocol _NavigationZoomLastSourceViewProviding: AnyObject {
     ///
     /// Prevents reusing a cached view across different source view controllers.
     var _suinavZoomLastSourceViewControllerID: ObjectIdentifier? { get set }
+
+    /// The zoom source id that `_suinavZoomLastSourceView` corresponds to.
+    ///
+    /// Prevents reusing a cached view across different ids if the provider is called multiple times.
+    var _suinavZoomLastSourceID: AnyHashable? { get set }
 }
 
 @MainActor
@@ -156,5 +161,6 @@ func _suinavClearLastResolvedZoomSourceView(on viewController: UIViewController)
     guard let provider = viewController as? _NavigationZoomLastSourceViewProviding else { return }
     provider._suinavZoomLastSourceView = nil
     provider._suinavZoomLastSourceViewControllerID = nil
+    provider._suinavZoomLastSourceID = nil
 }
 #endif

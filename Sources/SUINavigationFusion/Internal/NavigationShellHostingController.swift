@@ -61,6 +61,7 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
     /// restructured the source hierarchy (making the registry lookup fail).
     weak var _suinavZoomLastSourceView: UIView?
     var _suinavZoomLastSourceViewControllerID: ObjectIdentifier?
+    var _suinavZoomLastSourceID: AnyHashable?
     
     init(
         rootView: Content,
@@ -82,6 +83,7 @@ final class NavigationShellHostingController<Content: View>: UIHostingController
         self._suinavZoomSourceProviderCallCount = 0
         self._suinavZoomLastSourceView = nil
         self._suinavZoomLastSourceViewControllerID = nil
+        self._suinavZoomLastSourceID = nil
         super.init(rootView: rootView)
     }
     
