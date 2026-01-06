@@ -166,6 +166,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 // `didShow` (transition completion).
                 if context.isCancelled {
                     self.injectedNavigator?._activeZoomSourceID = nil
+                    self.injectedNavigator?._clearPendingPathMutation()
                 }
 
                 // Path-driven stacks are “NavigationStack-like”: an external router owns `SUINavigationPath`,

@@ -90,16 +90,34 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         /// This is an ephemeral style hint and is **not persisted**.
         let transition: SUINavigationTransition?
 
+        /// What kind of path mutation was requested.
+        ///
+        /// Used to apply stricter “stale intent” rules for pushes (see `mutatePath` / `flushPendingPathMutationsIfPossible`).
+        let kind: _PathMutationKind
+
+        /// The bound path snapshot observed when the mutation was requested.
+        ///
+        /// If the path changes before the mutation is flushed (e.g. the user pops back while a previous
+        /// transition is still completing), we treat deferred pushes as stale and drop them to avoid
+        /// “auto-push” jumps once UIKit becomes idle again.
+        let basePath: SUINavigationPath
+
         /// Mutation to apply to the bound `SUINavigationPath`.
         let mutation: (inout SUINavigationPath) -> Void
     }
 
-    /// Path mutations that were requested while a UIKit transition was still in flight.
+    private enum _PathMutationKind {
+        case push
+        case pop
+        case other
+    }
+
+    /// The latest path mutation that was requested while a UIKit transition was still in flight.
     ///
     /// UIKit is not re-entrant: pushing/popping while `UINavigationController` is still transitioning can
     /// corrupt the stack and break animations (especially for iOS 18+ zoom interactive dismiss).
     ///
-    /// We queue path mutations and replay them once the transition finishes.
+    /// We coalesce path mutations and replay the latest intent once the transition finishes.
     ///
     /// - Important:
     ///   For iOS 18+ fluid (continuously interactive) transitions, UIKit may transition in non-linear ways
@@ -108,7 +126,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     ///   Any temporary transition state must be one-shot, self-contained, and cleaned up in either
     ///   `UINavigationControllerDelegate.navigationController(_:didShow:animated:)` or a transition
     ///   coordinator completion callback.
-    private var pendingPathMutations: [_PendingPathMutation] = []
+    private var pendingPathMutation: _PendingPathMutation?
 
     /// Tracks the transition coordinator we attached a completion handler to, so we only schedule one flush
     /// per in-flight transition.
@@ -195,6 +213,7 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     private func mutatePath(
         animated: Bool,
         transition: SUINavigationTransition? = nil,
+        kind: _PathMutationKind = .other,
         _ mutation: @escaping (inout SUINavigationPath) -> Void
     ) {
         guard let driver = _pathDriver else { return }
@@ -209,12 +228,40 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         // flush them deterministically when the transition completes.
         if let navigationController = currentNavigationController(),
            let coordinator = navigationController.transitionCoordinator {
-            pendingPathMutations.append(.init(animated: animated, transition: transition, mutation: mutation))
+            // Avoid buffering multiple push intents during an in-flight push transition.
+            //
+            // If the user manages to trigger taps while UIKit is pushing, queueing would produce a second push
+            // immediately after the first finishes. Treat pushes as "at most one per transition".
+            if kind == .push, isPushTransition(using: coordinator, in: navigationController) == true {
+                return
+            }
+            pendingPathMutation = .init(
+                animated: animated,
+                transition: transition,
+                kind: kind,
+                basePath: driver.get(),
+                mutation: mutation
+            )
             schedulePendingPathMutationFlush(using: coordinator)
             return
         }
 
         applyPathMutation(driver: driver, animated: animated, transition: transition, mutation)
+    }
+
+    private func isPushTransition(
+        using coordinator: UIViewControllerTransitionCoordinator,
+        in navigationController: NCUINavigationController
+    ) -> Bool? {
+        guard
+            let fromViewController = coordinator.viewController(forKey: .from),
+            let toViewController = coordinator.viewController(forKey: .to),
+            let fromIndex = navigationController.viewControllers.firstIndex(of: fromViewController),
+            let toIndex = navigationController.viewControllers.firstIndex(of: toViewController)
+        else {
+            return nil
+        }
+        return toIndex > fromIndex
     }
 
     private func applyPathMutation(
@@ -260,11 +307,22 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
     @MainActor
     private func flushPendingPathMutationsIfPossible() {
         guard let driver = _pathDriver else {
-            pendingPathMutations.removeAll()
+            pendingPathMutation = nil
             pendingMutationCoordinator = nil
             return
         }
-        guard !pendingPathMutations.isEmpty else {
+        guard let pending = pendingPathMutation else {
+            pendingMutationCoordinator = nil
+            return
+        }
+
+        // Drop stale deferred pushes.
+        //
+        // Example: during an interactive pop completion phase, the user taps a cell (push intent is deferred),
+        // then immediately navigates back again. If we replay the push later on a different base path,
+        // the app “auto-pushes” unexpectedly.
+        if pending.kind == .push, driver.get() != pending.basePath {
+            pendingPathMutation = nil
             pendingMutationCoordinator = nil
             return
         }
@@ -276,27 +334,50 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
             return
         }
 
-        let mutations = pendingPathMutations
-        pendingPathMutations.removeAll()
+        pendingPathMutation = nil
         pendingMutationCoordinator = nil
-
-        // Apply all mutations to the latest path snapshot and publish once.
-        //
-        // If multiple actions were requested while transitioning, coalescing into a single state update is
-        // the safest behavior (mirrors SwiftUI: last update wins, UIKit reconciles once).
-        var path = driver.get()
-        for pending in mutations {
-            pending.mutation(&path)
-        }
-
-        // Use the last mutation’s “style” intent for the coalesced update.
-        let last = mutations.last
         applyPathMutation(
             driver: driver,
-            animated: last?.animated ?? false,
-            transition: last?.transition,
-            { $0 = path }
+            animated: pending.animated,
+            transition: pending.transition,
+            pending.mutation
         )
+    }
+
+    @MainActor
+    func _clearPendingPathMutation() {
+        pendingPathMutation = nil
+        pendingMutationCoordinator = nil
+    }
+
+    private func appendOrReplacePendingPushElement(_ element: SUINavigationPath.Element, in path: inout SUINavigationPath) {
+        // Fast path: ignore duplicate pushes to the same destination/payload.
+        if path.elements.last == element { return }
+
+        // If a previous push request has already updated the bound path but UIKit hasn't reconciled yet,
+        // multiple taps can append multiple elements and cause repeated pushes. Detect the "one element ahead"
+        // state and replace the pending element (newest wins).
+        guard
+            let navigationController = currentNavigationController(),
+            let restorationContext = _restorationContext
+        else {
+            path.append(element)
+            return
+        }
+
+        let (currentPath, isFullyRepresentable) = restorationContext.currentPath(from: navigationController)
+        guard isFullyRepresentable else {
+            path.append(element)
+            return
+        }
+
+        if path.elements.count == currentPath.elements.count + 1,
+           Array(path.elements.prefix(currentPath.elements.count)) == currentPath.elements
+        {
+            path.elements[path.elements.count - 1] = element
+        } else {
+            path.append(element)
+        }
     }
 
     func _makeHostingController(
@@ -407,8 +488,17 @@ public final class Navigator: ObservableObject, Equatable, Hashable {
         if let driver = _pathDriver {
             do {
                 let payload = try driver.encoder.encode(route)
-                mutatePath(animated: animated, transition: transition) { path in
-                    path.append(.init(key: key, payload: payload, disableBackGesture: disableBackGesture))
+                let element = SUINavigationPath.Element(
+                    key: key,
+                    payload: payload,
+                    disableBackGesture: disableBackGesture
+                )
+                mutatePath(animated: animated, transition: transition, kind: .push) { [weak self] path in
+                    guard let self else {
+                        path.append(element)
+                        return
+                    }
+                    self.appendOrReplacePendingPushElement(element, in: &path)
                 }
             } catch {
                 assertionFailure("Failed to encode route payload for path-driven navigation: \(error).")
