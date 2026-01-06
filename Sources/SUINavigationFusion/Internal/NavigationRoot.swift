@@ -392,6 +392,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             // `UIViewControllerRepresentable.updateUIViewController` / `View.body`; use deferrals like
             // `scheduleBoundPathUpdate` to keep SwiftUI’s update cycle stable.
             let startBoundPath = transitionStartBoundPath
+            let wasInteractive = transitionWasInteractive
             transitionStartBoundPath = nil
             transitionWasInteractive = false
 
@@ -444,6 +445,33 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             // to reconcile safely with the captured animation/transition intent.
             if let pendingReconcile {
                 self.pendingReconcile = nil
+
+                // HARDENING: Prevent "auto-push back" / oscillation loops after an interactive pop/dismiss.
+                //
+                // Scenario:
+                // - User performs an interactive pop (gesture-driven), and UIKit successfully navigates back.
+                // - During the transition, SwiftUI updates can cause `_NavigationRoot.updateUIViewController` to defer
+                //   reconciliation while still observing the pre-gesture desired path.
+                // - If we blindly re-emit that deferred desired path here, the stack is immediately pushed forward again,
+                //   potentially creating an infinite push/pop loop (as seen in the ZoomTransitions sample).
+                //
+                // Fix:
+                // If the transition was interactive and resulted in a navigation stack change, and the deferred
+                // reconciliation tries to restore the pre-transition bound path, treat it as stale and discard it.
+                if
+                    let startBoundPath,
+                    wasInteractive,
+                    path != startBoundPath,
+                    pendingReconcile.desiredPath == startBoundPath
+                {
+                    if _SUINavigationFusionDiagnostics.isZoomEnabled() {
+                        _SUINavigationFusionDiagnostics.zoom(
+                            "pendingReconcile dropped as stale after interactive transition startDepth=\(startBoundPath.elements.count) endDepth=\(path.elements.count)"
+                        )
+                    }
+                    return
+                }
+
                 // Only re-emit the desired path if it is still the router’s current intent.
                 // If UIKit (gesture-driven navigation) already synced the bound path to match the actual stack,
                 // do not resurrect a stale pre-transition desired path (that can cause “auto-push back” bugs).
