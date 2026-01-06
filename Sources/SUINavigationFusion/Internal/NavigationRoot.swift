@@ -122,6 +122,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
         fileprivate var pendingReconcile: PendingReconcile?
         private var pendingPathUpdate: SUINavigationPath?
         private var pendingPathUpdateTask: Task<Void, Never>?
+        private var pendingPathUpdateGeneration: Int = 0
         private var transitionStartBoundPath: SUINavigationPath?
         private var transitionWasInteractive: Bool = false
         private weak var transitionZoomedViewController: UIViewController?
@@ -223,7 +224,17 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
 
                 var expected = startBoundPath
                 expected.removeLast(1)
-                self.scheduleBoundPathUpdate(expected)
+
+                // Apply immediately (no `Task.yield()`):
+                // When the user releases an interactive pop, UIKit enters a completion phase during which `didShow`
+                // is invoked later than the UI appears “done”. Deferring the bound path update can leave a stale
+                // desired path in SwiftUI long enough to trigger a re-push/re-pop oscillation.
+                self.cancelPendingBoundPathUpdate()
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    pathDriver.set(expected, false)
+                }
             }
             
             let navigationControllerForIndices = navigationController
@@ -433,6 +444,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             if let startBoundPath, pathDriver.get() != startBoundPath {
                 // Router changed path during the transition; do not overwrite.
             } else if pathDriver.get() != path {
+                cancelPendingBoundPathUpdate()
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
@@ -477,6 +489,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 // do not resurrect a stale pre-transition desired path (that can cause “auto-push back” bugs).
                 guard pathDriver.get() == pendingReconcile.desiredPath else { return }
 
+                cancelPendingBoundPathUpdate()
                 var transaction = Transaction()
                 transaction.disablesAnimations = pendingReconcile.disablesAnimations
                 if #available(iOS 17.0, *) {
@@ -499,6 +512,8 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
             if _SUINavigationFusionDiagnostics.isZoomEnabled() {
                 _SUINavigationFusionDiagnostics.zoom("scheduleBoundPathUpdate depth=\(path.elements.count)")
             }
+            pendingPathUpdateGeneration += 1
+            let generation = pendingPathUpdateGeneration
             pendingPathUpdate = path
 
             pendingPathUpdateTask?.cancel()
@@ -506,6 +521,7 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                 guard let self else { return }
                 await Task.yield()
                 guard !Task.isCancelled else { return }
+                guard self.pendingPathUpdateGeneration == generation else { return }
                 guard let pathDriver = self.pathDriver, let pendingPathUpdate = self.pendingPathUpdate else { return }
                 self.pendingPathUpdate = nil
 
@@ -515,6 +531,14 @@ struct _NavigationRoot<Root: View>: UIViewControllerRepresentable {
                     pathDriver.set(pendingPathUpdate, false)
                 }
             }
+        }
+
+        @MainActor
+        private func cancelPendingBoundPathUpdate() {
+            pendingPathUpdateGeneration += 1
+            pendingPathUpdate = nil
+            pendingPathUpdateTask?.cancel()
+            pendingPathUpdateTask = nil
         }
         
         private func applyCurve(_ timeFraction: CGFloat, curve: UIView.AnimationCurve) -> CGFloat {
